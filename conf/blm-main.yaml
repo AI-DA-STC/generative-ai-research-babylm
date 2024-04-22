@@ -1,0 +1,18 @@
+hydra:
+  job:
+    chdir: True
+
+logger:
+  use_log_filename_prefix: false
+  log_filename_prefix: "/var/log/babylm"
+  excluded_handlers: []
+
+validate_config:
+  strict: False
+
+preprocess:
+  input_folder_path_10m: "data/raw/train_10M"
+  output_folder_path_10m: "data/processed/train_10M"
+  tokenizer_model_path_10m: "models/tokenizer/train_10M/"
+  text_split_pattern: r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
+  vocab_size: 64000
