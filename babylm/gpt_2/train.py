@@ -23,6 +23,7 @@ import wandb
 from contextlib import nullcontext
 import sys
 from pathlib import Path
+from omegaconf import OmegaConf
 
 import numpy as np
 import torch
@@ -146,8 +147,9 @@ def train(args):
         GPT_model = DDP(model, device_ids=[ddp_local_rank])
 
     # setup logging using weights and biases https://wandb.ai/site
+    serializable_config = OmegaConf.to_container(args, resolve=True, throw_on_missing=True)
     if args.train.wandb_log and master_process:
-        wandb.init(project=args.train.wandb_project, name=args.train.wandb_run_name+str(datetime.now()), config=args.train)
+        wandb.init(project=args.train.wandb_project, name=args.train.wandb_run_name+str(datetime.now()), config=serializable_config)
     # training loop
     X, Y = utils.get_batch('train',args) # fetch the very first batch
     t0 = time.time()
