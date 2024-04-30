@@ -64,6 +64,11 @@ For macOS (Apple Chip):
 $ mamba env create -f dependencies/babylm-conda-metal.yaml
 ```
 
+For Linux :
+```bash
+$ mamba env create -f dependencies/babylm-conda.yaml
+```
+
 **Download data**
 
 [Click here to download dataset](https://osf.io/ad7qg/) and save the dev, text, train_10M and train_100M to the `data/raw` folder

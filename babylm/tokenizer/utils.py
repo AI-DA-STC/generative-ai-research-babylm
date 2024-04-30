@@ -4,6 +4,9 @@ import pickle
 import nltk 
 from pathlib import Path
 import sys
+import os
+import random
+import glob
 import logging 
 logger = logging.getLogger(__name__)
 base_path = str(Path(__file__).resolve().parent.parent.parent)
@@ -53,3 +56,37 @@ def get_vocab_size(text):
     tokens = nltk.word_tokenize(text)
     freq_dist = nltk.FreqDist(tokens)
     return len(freq_dist)
+
+def combine_files(input_directory,output_file):
+    try:
+        with open(output_file, 'w') as outfile:
+            for filename in os.listdir(input_directory):
+                if filename.endswith('.train'):
+                    file_path = os.path.join(input_directory, filename)
+                    with open(file_path, 'r') as readfile:
+                        contents = readfile.read()
+                        outfile.write(contents)
+                        outfile.write('\n')
+        logger.info(f"All files have been combined and saved to: {output_file}")
+    except Exception as e:
+        logger.error(f"Error while combining files : {e}")
+
+def process_train_files(input_directory,output_directory):
+    combine_files(input_directory,os.path.join(output_directory, 'processed.txt'))
+    train_files = glob.glob(os.path.join(input_directory, '*.train'))
+    logger.info(f"found processed files {train_files}")
+    try:
+        val_file = random.choice(train_files)
+        os.rename(val_file, os.path.join(output_directory, 'processed.val'))
+        logger.info(f"Validation data saved to {output_directory}")
+    except Exception as e:
+        logger.error(f"Error occured while saving validation data {e}")
+    train_files.remove(val_file)
+    try:
+        with open(os.path.join(output_directory, 'processed.train'), 'w') as outfile:
+            for fname in train_files:
+                with open(fname, 'r') as infile:
+                    outfile.write(infile.read() + "\n")
+        logger.info(f"Training data saved to {output_directory}")
+    except Exception as e:
+        logger.error(f"Error occured while saving training data {e}")
