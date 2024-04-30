@@ -40,8 +40,11 @@ def process(args:DictConfig) -> None:
             pass
 
         file_name_with_extension = os.path.basename(file_path)
-        os.makedirs(base_path + '/' + args.preprocess.output_folder_path_10m + '/',exist_ok=True)
-        blm.tokenizer.utils.save_text(text,base_path + '/' + args.preprocess.output_folder_path_10m + '/' + file_name_with_extension)
+        os.makedirs(base_path + '/' + args.preprocess.interim_folder_path_10m + '/',exist_ok=True)
+        blm.tokenizer.utils.save_text(text,base_path + '/' + args.preprocess.interim_folder_path_10m + '/' + file_name_with_extension)
+
+    #Creating training and validation data
+    blm.tokenizer.utils.process_train_files(base_path + '/' + args.preprocess.interim_folder_path_10m,base_path + '/' + args.preprocess.output_folder_path_10m)
 
 if __name__ == '__main__':
     process()
