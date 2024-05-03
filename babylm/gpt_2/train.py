@@ -99,7 +99,8 @@ def train(args):
     elif args.train.init_from == 'resume':
         logger.info(f"Resuming training from {args.train.out_dir}")
         # resume training from a checkpoint.
-        ckpt_path = os.path.join(base_path + '/' + args.train.out_dir, 'ckpt.pt')
+        os.makedirs(base_path + '/' + args.train.out_dir + '/' + args.train.wandb_run_name)
+        ckpt_path = os.path.join(base_path + '/' + args.train.out_dir, str(datetime.now())+'_ckpt.pt')
         checkpoint = torch.load(ckpt_path, map_location=args.train.device)
         checkpoint_model_args = checkpoint['model_args']
         # force these config attributes to be equal otherwise we can't even resume training
@@ -156,6 +157,8 @@ def train(args):
     local_iter_num = 0 # number of iterations in the lifetime of this process
     raw_model = GPT_model.module if ddp else GPT_model # unwrap DDP container if needed
     running_mfu = -1.0
+    checkpoint_path = "base_path + '/' + args.train.out_dir + '/checkpoints/'"
+    os.makedirs(checkpoint_path,exist_ok=True)
     while True:
 
         # determine and set the learning rate for this iteration
@@ -177,7 +180,8 @@ def train(args):
                 })
             if losses['val'] < best_val_loss or args.train.always_save_checkpoint:
                 best_val_loss = losses['val']
-                if iter_num > 0:
+                #save checkpoint every 50 iters
+                if iter_num == args.train.max_iters:
                     checkpoint = {
                         'model': raw_model.state_dict(),
                         'optimizer': optimizer.state_dict(),
@@ -186,8 +190,12 @@ def train(args):
                         'best_val_loss': best_val_loss,
                         'config': args.train,
                     }
-                    logger.info(f"saving checkpoint to {args.train.out_dir}")
-                    torch.save(checkpoint, os.path.join(base_path + '/' + args.train.out_dir, 'ckpt.pt'))
+                    torch.save(checkpoint, os.path.join(checkpoint_path, args.train.wandb_run_name + str(iter_num)+'_ckpt.pt'))
+                    logger.info(f"saving checkpoint to {checkpoint_path}")
+                    # Create a W&B artifact for the checkpoint
+                    artifact = wandb.Artifact('model-checkpoints', type='model')
+                    artifact.add_file(os.path.join(checkpoint_path, args.train.wandb_run_name + str(iter_num)+'_ckpt.pt'))
+                    wandb.log_artifact(artifact)
         if iter_num == 0 and args.train.eval_only:
             break
 

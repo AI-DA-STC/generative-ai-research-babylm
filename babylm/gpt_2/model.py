@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from . import elements
+import babylm as blm
 import math
 from transformers import GPT2LMHeadModel
 import inspect
@@ -22,8 +23,15 @@ class GPT(nn.Module):
             h = nn.ModuleList([elements.Block(args) for _ in range(args.train.n_layer)]),
             ln_f = elements.LayerNorm(args.train.n_embd, bias=args.train.bias),
         ))
-        self.lm_head = nn.Linear(args.train.n_embd, vocab_size, bias=False)
-        self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
+        if args.MRL.enable:
+            self.lm_head = blm.MRL.MRL_layer.MRL_Linear_Layer(args.MRL.emb_dim,num_classes=vocab_size)
+            self.MRL_loss = blm.MRL.loss.Matryoshka_CE_Loss(args.train.device, args.MRL.relative_importance)
+            max_index = self.lm_head.nesting_list.index(max(self.lm_head.nesting_list))
+            weights_max_emb_dim = getattr(self.lm_head, f'nesting_classifier_{max_index}').weight
+            self.transformer.wte.weight = weights_max_emb_dim    
+        else:
+            self.lm_head = nn.Linear(args.train.n_embd, vocab_size, bias=False)
+            self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
 
         # init all weights
         self.apply(self._init_weights)
@@ -71,8 +79,12 @@ class GPT(nn.Module):
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            if self.args.MRL.enable:
+                logits = self.lm_head(x)
+                loss = self.MRL_loss(logits, targets.view(-1))
+            else:
+                logits = self.lm_head(x)
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
