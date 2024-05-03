@@ -6,6 +6,9 @@ import math
 from pathlib import Path
 import sys
 from tqdm import tqdm
+import babylm as blm
+import logging
+logger = logging.getLogger(__name__)
 base_path = str(Path(__file__).resolve().parent.parent.parent)
 sys.path.append(base_path)
 
@@ -49,7 +52,7 @@ def estimate_loss(model,args,ctx):
     model.eval()
     for split in ['train', 'val']:
         losses = torch.zeros(args.train.eval_iters)
-        for k in tqdm(range(args.train.eval_iters)):
+        for k in tqdm(range(args.train.eval_iters),desc=f"batch {split}"):
             X, Y = get_batch(split,args)
             with ctx:
                 logits, loss = model(X, Y)
