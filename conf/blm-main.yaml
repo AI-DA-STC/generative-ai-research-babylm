@@ -47,7 +47,7 @@ train:
   warmup_iters: 10 # how many steps to warm up for
   lr_decay_iters: 2000 # should be ~= max_iters per Chinchilla
   min_lr: 0.00006 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
-  wandb_log: True
+  wandb_log: False
   wandb_project: baby_lm
   wandb_run_name: 'MRL_'
   # DDP settings
@@ -60,5 +60,13 @@ train:
 MRL:
   enable: True
   efficient: False
-  emb_dim: [768, 512, 256, 128, 64]
+  emb_dim: [768,384,192,96,48]
   relative_importance: [1,1,1,1,1]
+
+eval:
+  model_path: "airesearchers/baby_lm/model-checkpoints:v0"
+  eval_blimp: True
+  output_dir: "/data/output"
+  model_local_path: "/models/gpt-2"
+  eval_tasks: ['blimp_filtered']
+  batch_size: 128

@@ -206,11 +206,14 @@ class GPT(nn.Module):
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
         Most likely you'll want to make sure to be in model.eval() mode of operation for this.
         """
+        idx = idx.to(self.transformer.wte.weight.device)
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.size(1) <= self.args.train.block_size else idx[:, -self.args.train.block_size:]
             # forward the model to get the logits for the index in the sequence
             logits, _ = self(idx_cond)
+            if self.args.MRL.enable:
+                logits = logits[0] #since when MRL is enabled a tuple of n logits are returned, each for a emb dim, so select the highest one
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
@@ -225,3 +228,38 @@ class GPT(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)
 
         return idx
+    
+    def loglikelihood(self, model, input_ids, target_ids):
+        """
+        Calculates the log likelihood of the target tokens given the input tokens.
+        
+        Parameters:
+            model (torch.nn.Module): The GPT-2 model.
+            input_ids (torch.Tensor): Tensor of input token IDs (batch_size, sequence_length).
+            target_ids (torch.Tensor): Tensor of target token IDs, which are the expected outputs (batch_size, sequence_length).
+        
+        Returns:
+            float: The total log likelihood for the batch.
+        """
+        # Forward pass: get logits from the model
+        outputs = model(input_ids)
+        logits = outputs.logits  # Assuming your model outputs an object with a logits attribute
+
+        # Shift logits and targets to align for calculating the log likelihood of next tokens
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = target_ids[..., 1:].contiguous()
+
+        # Flatten the logits and labels to feed into log_softmax and nll_loss
+        flat_logits = shift_logits.view(-1, shift_logits.size(-1))
+        flat_labels = shift_labels.view(-1)
+
+        # Calculate log probabilities using log softmax
+        log_probs = F.log_softmax(flat_logits, dim=-1)
+
+        # Gather the log probabilities of the actual next tokens
+        log_probs = log_probs.gather(dim=1, index=flat_labels.unsqueeze(1)).squeeze(1)
+
+        # Sum log probabilities for the entire sequence/batch to get the log likelihood
+        total_log_likelihood = log_probs.sum()
+
+        return total_log_likelihood.item()

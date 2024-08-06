@@ -10,3 +10,4 @@ hydra-core==1.3.2
 python-json-logger==2.0.7
 wandb==0.16.6
 tqdm==4.66.2
+lm-eval==0.4.2
