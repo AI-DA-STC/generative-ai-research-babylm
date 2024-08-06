@@ -26,4 +26,4 @@ class Matryoshka_CE_Loss(nn.Module):
 		
 		# Apply relative importance weights
 		weighted_losses = rel_importance * losses
-		return weighted_losses.sum()
+		return weighted_losses.mean()

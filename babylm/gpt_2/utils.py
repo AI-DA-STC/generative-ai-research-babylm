@@ -6,7 +6,9 @@ import math
 from pathlib import Path
 import sys
 from tqdm import tqdm
-import babylm as blm
+import collections
+import json
+
 import logging
 logger = logging.getLogger(__name__)
 base_path = str(Path(__file__).resolve().parent.parent.parent)
@@ -74,3 +76,16 @@ def get_lr(iter,args):
     assert 0 <= decay_ratio <= 1
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
     return args.train.min_lr + coeff * (args.train.learning_rate - args.train.min_lr)
+
+def get_vocab_size(args):
+    meta_path = base_path + '/' + args.train.tokenizer_path
+    logger.info(f"looking for tokenizer in {meta_path}")
+    meta_vocab_size = None
+    if os.path.exists(meta_path):
+        with open(meta_path, 'rb') as f:
+            meta = json.load(f)
+        meta_vocab_size = len(meta)
+        logger.info(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
+    else:
+        logger.info(f"No tokenizer found inside {meta_path})")
+    return meta_vocab_size
