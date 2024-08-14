@@ -64,10 +64,10 @@ class GPT(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx, targets=None):
-        device = idx.device
+        idx = idx.to(self.args.train.device)
         b, t = idx.size()
         assert t <= self.args.train.block_size, f"Cannot forward sequence of length {t}, block size is only {self.args.train.block_size}"
-        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
+        pos = torch.arange(0, t, dtype=torch.long, device=self.args.train.device) # shape (t)
 
         # forward the GPT model itself
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
@@ -78,6 +78,7 @@ class GPT(nn.Module):
         x = self.transformer.ln_f(x)
 
         if targets is not None:
+            targets = targets.to(self.args.train.device)
             # if we are given some desired targets also calculate the loss
             if self.args.MRL.enable:
                 logits = self.lm_head(x)

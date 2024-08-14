@@ -72,6 +72,7 @@ def combine_files(input_directory,output_file):
         logger.error(f"Error while combining files : {e}")
 
 def process_train_files(input_directory,output_directory):
+    os.makedirs(output_directory,exist_ok=True)
     combine_files(input_directory,os.path.join(output_directory, 'processed.txt'))
     train_files = glob.glob(os.path.join(input_directory, '*.train'))
     logger.info(f"found processed files {train_files}")

@@ -36,7 +36,7 @@ def train_hf_tokenizer(args:DictConfig) -> None:
         file_path = glob.glob(base_path + '/' + args.preprocess.output_folder_path_10m + '/*.txt')
         
         # Determining the actual vocabulary size
-        tokenizer.train(files=file_path, vocab_size=200000, min_frequency=2, special_tokens=[
+        tokenizer.train(files=file_path, vocab_size=args.preprocess.vocab_size, min_frequency=2, special_tokens=[
             "<s>",
             "<pad>",
             "</s>",
