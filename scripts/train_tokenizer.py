@@ -19,7 +19,7 @@ def train_tokenizer(args:DictConfig) -> None:
     )
     blm.general.schema.validate_config(args, strict=args.validate_config.strict)
 
-    input_text = blm.tokenizer.utils.read_text_from_file(args.preprocess.output_folder_path_10m)
+    input_text = blm.tokenizer.utils.read_text_from_file(base_path + '/' + args.preprocess.output_folder_path_10m + '/processed.txt')
 
     #vocab_size = blm.tokenizer.utils.get_vocab_size(input_text)
     vocab_size = args.preprocess.vocab_size
@@ -33,7 +33,8 @@ def train_tokenizer(args:DictConfig) -> None:
         logger.error(f"Error occured during training tokenizer {e}")
     
     try:
-        tokenizer.save(args.preprocess.tokenizer_model_path_10m) # writes tok32k.model and tok32k.vocab
+        os.makedirs(base_path + '/' + args.preprocess.tokenizer_model_path_10m, exist_ok=True)
+        tokenizer.save(base_path + '/' + args.preprocess.tokenizer_model_path_10m) # writes tok32k.model and tok32k.vocab
         logger.info(f"Tokenizr model saved to {args.preprocess.tokenizer_model_path_10m}")
     except Exception as e:
         logger.error(f"Error occured while saving tokenizer model {e}")

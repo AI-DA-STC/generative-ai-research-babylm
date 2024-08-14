@@ -16,7 +16,6 @@ class Matryoshka_CE_Loss(nn.Module):
 	def forward(self, output, target):
 		# output shape: [G granularities, N batch size, C context size] 
 		# target shape: [N batch size]
-
 		# Calculate losses for each output and stack them. This is still O(N)
 		losses = torch.stack([self.criterion(output_i.view(-1, output_i.size(-1)), target) for output_i in output])
 		#logger.info(f"cross entropy loss for logits {output[0][0,:,0]} and targets {target[0,:]} by dimension {losses}")

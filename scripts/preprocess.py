@@ -38,7 +38,7 @@ def process(args:DictConfig) -> None:
             text = blm.tokenizer.utils.remove_section_headers(text)
         else:
             pass
-
+        logger.info(f"length of text found: {len(text)}")
         file_name_with_extension = os.path.basename(file_path)
         os.makedirs(base_path + '/' + args.preprocess.interim_folder_path_10m + '/',exist_ok=True)
         blm.tokenizer.utils.save_text(text,base_path + '/' + args.preprocess.interim_folder_path_10m + '/' + file_name_with_extension)
