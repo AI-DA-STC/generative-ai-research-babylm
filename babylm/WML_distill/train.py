@@ -6,7 +6,6 @@ import logging
 import wandb
 from pathlib import Path
 import sys
-from torch.optim.lr_scheduler import StepLR,CosineAnnealingLR
 from torch.cuda.amp import autocast, GradScaler
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -17,7 +16,7 @@ from . import utils
 from . import model
 base_path = str(Path(__file__).resolve().parent.parent.parent)
 sys.path.append(base_path)
-from babylm.gpt_2.utils import get_vocab_size
+from babylm.gpt_2.utils import get_vocab_size, get_lr
 from babylm.eval.utils import load_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -33,12 +32,11 @@ class WMLTrainer:
             args (Dictargs): argsuration dictionary.
         """
         self.args = args
+        self.learning_rate = args.train.learning_rate
         self.device = args.train.device
         self.base_model = self.load_base_model()
         self.peer_models = self.create_peer_models()
         self.peer_weights = nn.Parameter(torch.ones(len(self.peer_models), device=self.device) / len(self.peer_models))
-        self.optimizer = self.create_optimizer()
-        self.scheduler = self.create_scheduler()
         self.scaler = GradScaler()
         self.datetime = datetime.now()
 
@@ -75,7 +73,7 @@ class WMLTrainer:
         
         return peer_models
     
-    def create_optimizer(self) -> torch.optim.Optimizer:
+    def create_optimizer(self, learning_rate) -> torch.optim.Optimizer:
         """
         Create the optimizer.
 
@@ -83,16 +81,7 @@ class WMLTrainer:
             torch.optim.Optimizer: The created optimizer.
         """
         params = sum([list(model.parameters()) for model in self.peer_models], []) + [self.peer_weights]
-        return torch.optim.Adam(params, lr=self.args.WML.learning_rate)
-
-    def create_scheduler(self) -> torch.optim.lr_scheduler._LRScheduler:
-        """
-        Create the learning rate scheduler.
-
-        Returns:
-            torch.optim.lr_scheduler._LRScheduler: The created scheduler.
-        """
-        return CosineAnnealingLR(self.optimizer, T_max=self.args.WML.batch_size, eta_min=self.args.WML.learning_rate)
+        return torch.optim.Adam(params, lr=learning_rate)
 
     def train(self):
         """Run the training process."""
@@ -100,6 +89,7 @@ class WMLTrainer:
                                                 self.base_model, 
                                                 self.device,
                                                 self.args.WML.num_batches,
+                                                self.args,
                                                 self.args.WML.shuffle,
                                                 self.args.WML.batch_size,
                                                 self.args.train.block_size)
@@ -107,6 +97,7 @@ class WMLTrainer:
                                                 self.base_model, 
                                                 self.device,
                                                 self.args.WML.num_batches,
+                                                self.args,
                                                 self.args.WML.shuffle,
                                                 self.args.WML.batch_size,
                                                 self.args.train.block_size)
@@ -116,6 +107,7 @@ class WMLTrainer:
             wandb.init(project=self.args.WML.wandb_project, name=self.args.WML.wandb_run_name+str(self.datetime), config=serializable_config)
     
         for epoch in range(self.args.WML.num_epochs):
+            self.learning_rate = get_lr(epoch,self.args)
             train_loss = self.train_epoch(train_dataloader)
             logger.info(f"Epoch {epoch+1}/{self.args.WML.num_epochs} completed. Train Loss: {train_loss:.4f}")
             if epoch % self.args.WML.weight_update_frequency == 0:
@@ -129,11 +121,8 @@ class WMLTrainer:
                         "iter": epoch,
                         "train/loss": train_loss,
                         "val/loss": val_loss,
-                        "lr": round(self.optimizer.param_groups[0]['lr'],4)
+                        "lr": round(self.learning_rate,4)
                     })
-
-            self.scheduler.step()
-
         self.save_models()
 
     def train_epoch(self, dataloader: torch.utils.data.DataLoader) -> float:
@@ -147,18 +136,16 @@ class WMLTrainer:
         Returns:
             float: Average training loss for the epoch.
         """
-        total_loss = 0
+        final_total_loss = 0
         for model in self.peer_models:
             model.train()
-
         for step, batch in tqdm(enumerate(dataloader), total=self.args.WML.num_batches, desc="Training"):
             inputs, labels = batch
-            inputs = inputs.to(self.device)
             if self.args.MRL.enable:
                 labels = labels[0].squeeze().reshape(self.args.WML.batch_size, -1).to(self.device)
             else:
                 labels = labels.squeeze().reshape(self.args.WML.batch_size, -1).to(self.device)
-            self.optimizer.zero_grad()
+            self.create_optimizer(self.learning_rate).zero_grad()
 
             with autocast():
                 peer_outputs = [model(inputs)[0] for model in self.peer_models]
@@ -168,12 +155,10 @@ class WMLTrainer:
                           for i, outputs in enumerate(peer_outputs)]
                 total_loss = sum(losses)
             self.scaler.scale(total_loss).backward()
-            self.scaler.step(self.optimizer)
+            self.scaler.step(self.create_optimizer(self.learning_rate))
             self.scaler.update()
-
-            total_loss += total_loss.item()
-
-        return total_loss / self.args.WML.num_batches
+            final_total_loss += total_loss.item()
+        return final_total_loss / self.args.WML.num_batches
 
     def validate(self, dataloader: torch.utils.data.DataLoader) -> float:
         """
@@ -186,7 +171,7 @@ class WMLTrainer:
         Returns:
             float: Average validation loss.
         """
-        total_loss = 0
+        final_total_loss = 0
 
         for model in self.peer_models:
             model.eval()
@@ -204,8 +189,10 @@ class WMLTrainer:
                                 torch.cat([self.peer_weights[:i], self.peer_weights[i+1:]]),
                                 self.args.WML.loss_alpha)
                         for i, outputs in enumerate(peer_outputs)]
-                total_loss += sum(losses).item()
-    
+                total_loss = sum(losses)
+            
+            final_total_loss += total_loss.item()
+                
             with torch.enable_grad(): 
                 peer_outputs = [model(inputs)[0] for model in self.peer_models]
                 losses = [utils.wml_loss(outputs, labels, peer_outputs[:i] + peer_outputs[i+1:],
@@ -251,14 +238,14 @@ class WMLTrainer:
                 for i in range(len(self.peer_models)):
                     grad = grad_L2_w[i]
                     for param_L2, param_La in zip(grad_L2_theta[i], grad_La_theta[i]):
-                        grad += self.optimizer.param_groups[0]['lr'] * torch.sum(param_L2 * param_La)
+                        grad += self.learning_rate * torch.sum(param_L2 * param_La)
                     grad_w.append(grad)
                 # Step 3c: Update ω using mirror descent
                 exp_grad = [torch.exp(-self.args.WML.eta * g) for g in grad_w]
                 sum_exp_grad = sum(w * eg for w, eg in zip(self.peer_weights, exp_grad))
                 self.peer_weights = nn.Parameter(torch.tensor([w * eg / sum_exp_grad for w, eg in zip(self.peer_weights, exp_grad)]))
 
-        return total_loss / self.args.WML.num_batches
+        return final_total_loss / self.args.WML.num_batches
 
     def save_models(self):
         """Save the trained peer models."""
@@ -267,7 +254,7 @@ class WMLTrainer:
             logger.info(f"Peer {i+1} weight: {weight.item():.4f}")
             checkpoint = {
                         'model': model.state_dict(),
-                        'optimizer': self.optimizer.state_dict(),
+                        'optimizer': self.create_optimizer(self.learning_rate).state_dict(),
                         'config': self.args.WML,
                         'peer_weight': weight
                     }

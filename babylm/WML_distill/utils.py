@@ -10,9 +10,11 @@ import math
 from pathlib import Path
 from typing import Tuple
 import logging
+import sys
 logger = logging.getLogger(__name__)
 
-base_path = Path(__file__).resolve().parent.parent.parent
+base_path = str(Path(__file__).resolve().parent.parent.parent)
+sys.path.append(base_path)
 
 class BinaryFileDataset(Dataset):
     """A dataset for reading binary files."""
@@ -50,15 +52,22 @@ class BinaryFileDataset(Dataset):
 
     def __getitem__(self, idx):
         x = torch.from_numpy(self.data[idx:idx+self.block_size].astype(np.int64))
+        y = torch.from_numpy(self.data[idx+1:idx+1+self.block_size].astype(np.int64))
+        
         if self.use_pretrain_model_pred:
             with torch.no_grad():
                 self.pretrained_model.eval()
-                y, _ = self.pretrained_model(x.unsqueeze(0).to(self.device))
+                x_tensor = x.unsqueeze(0).to(self.device)
+                y, _ = self.pretrained_model(x_tensor)
+                y = y.squeeze(0)  # Shape: (block_size, vocab_size)
         else:
-            y = torch.from_numpy(self.data[idx+1:idx+1+self.block_size].astype(np.int64))
-        return x, y
+            # Convert y to one-hot encoding
+            y_one_hot = torch.zeros((self.block_size, 50257), dtype=torch.float32)
+            y_one_hot.scatter_(1, y.unsqueeze(1), 1)
+            y = y_one_hot
+        return x.to(self.device), y.to(self.device)
 
-def get_dataloader(split: str, model: nn.Module, device: torch.device, num_batches: int, shuffle: bool = True, batch_size: int = 256, block_size: int = 64, use_pretrain_model_pred: bool = True) -> Tuple[DataLoader, int]:
+def get_dataloader(split: str, model: nn.Module, device: torch.device, num_batches: int, args, shuffle: bool = True, batch_size: int = 256, block_size: int = 64, use_pretrain_model_pred: bool = False) -> Tuple[DataLoader, int]:
     """
     Get a DataLoader for the specified split.
 
@@ -73,9 +82,9 @@ def get_dataloader(split: str, model: nn.Module, device: torch.device, num_batch
         Tuple[DataLoader, int]: The DataLoader and estimated number of batches.
     """
     if split == 'train':
-        file_path = os.path.join('/Users/krishnaiyer/generative-ai-research-babylm/data/processed/train_10M/processed_encoded_train.bin')
+        file_path = base_path + '/' + args.preprocess.output_folder_path_10m + '/' + 'processed_encoded_train.bin'
     else:
-        file_path = os.path.join('/Users/krishnaiyer/generative-ai-research-babylm/data/processed/train_10M/processed_encoded_val.bin')
+        file_path = base_path + '/' + args.preprocess.output_folder_path_10m + '/' + 'processed_encoded_val.bin'
     dataset = BinaryFileDataset(file_path, block_size, model, device, use_pretrain_model_pred=use_pretrain_model_pred)
     if shuffle:
         sampler = RandomSampler(dataset, replacement=False, num_samples=batch_size * num_batches)  # Adjust num_samples as needed
@@ -98,8 +107,9 @@ def wml_loss(outputs, labels, peer_outputs, weights, alpha):
     :param alpha: Balancing factor between CE loss and KL divergence
     """
     # Cross-entropy loss
-    ce_loss = torch.stack([F.cross_entropy(F.softmax(output_i.squeeze(1), dim=-1), F.softmax(labels.squeeze(1),dim=-1)) for output_i in outputs])
-    mean_ce_loss = ce_loss.sum()
+    #ce_loss = torch.stack([F.cross_entropy(F.softmax(output_i.squeeze(1), dim=-1), F.softmax(labels.squeeze(1),dim=-1)) for output_i in outputs])
+    ce_loss = torch.stack([F.cross_entropy(output_i.squeeze(1), labels.argmax(dim=-1)) for output_i in outputs])
+    mean_ce_loss = ce_loss.mean()
     # KL divergence loss
     kl_loss = 0
     kl = []
@@ -110,7 +120,7 @@ def wml_loss(outputs, labels, peer_outputs, weights, alpha):
             log_q = F.log_softmax(peer_output[j].squeeze(1), dim=-1)
             kl_loss += torch.sum(weights[i] * (p * (log_p - log_q)),dim=-1).mean()
             kl.append(kl_loss)
-    mean_kl_loss = torch.stack(kl).sum()
+    mean_kl_loss = torch.stack(kl).mean()
     # Combine losses
     loss = (1 - alpha) * mean_ce_loss + alpha * mean_kl_loss
     return loss

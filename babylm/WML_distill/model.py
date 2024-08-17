@@ -41,13 +41,20 @@ class PeerModel(nn.Module):
         - pruned_model (nn.Module): The pruned model.
         """
         model = copy.deepcopy(base_model)
-
-        parameters_to_prune = []
         
         # Identify the layers to prune
+        parameters_to_prune = []
         for name, module in model.named_modules():
-            if isinstance(module, nn.Linear):
-                parameters_to_prune.append((module, 'weight'))
+            if isinstance(module, blm.gpt_2.attention.CausalSelfAttention):
+                parameters_to_prune.extend([
+                    (module.c_attn, 'weight'),
+                    (module.c_proj, 'weight')
+                ])
+            elif isinstance(module, blm.gpt_2.elements.MLP):
+                parameters_to_prune.extend([
+                    (module.c_fc, 'weight'),
+                    (module.c_proj, 'weight')
+                ])
         
         # Select pruning method
         if importance == 'l1':
@@ -76,16 +83,18 @@ class PeerModel(nn.Module):
         """
         total_params = 0
         zero_params = 0
-        
+
         for name, module in model.named_modules():
-            if isinstance(module, nn.Linear):
-                layer_total = module.weight.nelement()
-                layer_zero = torch.sum(module.weight == 0).item()
-                layer_sparsity = 100.0 * layer_zero / layer_total
-                logger.info(f"{name}: {layer_sparsity:.2f}% sparsity")
-                total_params += layer_total
-                zero_params += layer_zero
-        
+            if isinstance(module, (blm.gpt_2.attention.CausalSelfAttention, blm.gpt_2.elements.MLP)):
+                for param_name, param in module.named_parameters():
+                    if 'weight' in param_name:
+                        layer_total = param.nelement()
+                        layer_zero = torch.sum(param == 0).item()
+                        layer_sparsity = 100.0 * layer_zero / layer_total
+                        logger.info(f"{name}.{param_name}: {layer_sparsity:.2f}% sparsity")
+                        total_params += layer_total
+                        zero_params += layer_zero
+
         overall_sparsity = 100.0 * zero_params / total_params
         logger.info(f"Overall model sparsity: {overall_sparsity:.2f}%")
     
