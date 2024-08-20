@@ -18,3 +18,4 @@ pandas==2.2.2
 tqdm==4.66.2
 tokenizers==0.15.2
 transformers==4.37.0 
+bayesian-optimization==1.5.1
