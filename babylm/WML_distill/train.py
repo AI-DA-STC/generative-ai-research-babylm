@@ -18,6 +18,7 @@ base_path = str(Path(__file__).resolve().parent.parent.parent)
 sys.path.append(base_path)
 from babylm.gpt_2.utils import get_vocab_size, get_lr
 from babylm.eval.utils import load_checkpoint
+from babylm.WML_distill import peer_generator
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class WMLTrainer:
         """
         self.args = args
         self.learning_rate = args.train.learning_rate
+        self.WML_learning_learning = args.WML.learning_rate
         self.device = args.train.device
         self.base_model = self.load_base_model()
         self.peer_models = self.create_peer_models()
@@ -63,11 +65,13 @@ class WMLTrainer:
         Returns:
             List[PeerModel]: List of created peer models.
         """
-        peer_models =  [model.PeerModel(self.base_model, ratio, self.args.WML.prune_importance).to(self.device) 
-                for ratio in self.args.WML.prune_ratios]
+        best_configs = peer_generator.optimize_peer_models(self.base_model, num_peers=self.args.WML.num_peers, num_layers=self.args.train.n_layer, base_heads=self.args.train.n_head, bayesian_init_points=self.args.WML.bayesian_init_points, bayesian_n_iter=self.args.WML.bayesian_n_iter, prune_ratio_range=tuple(self.args.WML.prune_ratio_range))
+
+        peer_models =  [peer_generator.prune_gpt_model(self.base_model,config).to(self.device) for config in best_configs]
         
         # Ensure all parameters in all peer models require gradients
         for peer_model in peer_models:
+            peer_generator.print_gpt_sparsity(peer_model)
             for param in peer_model.parameters():
                 param.requires_grad = True
         
@@ -107,11 +111,11 @@ class WMLTrainer:
             wandb.init(project=self.args.WML.wandb_project, name=self.args.WML.wandb_run_name+str(self.datetime), config=serializable_config)
     
         for epoch in range(self.args.WML.num_epochs):
-            self.learning_rate = get_lr(epoch,self.args)
+            self.learning_rate = get_lr(epoch,self.args,lr_type='train')
             train_loss = self.train_epoch(train_dataloader)
             logger.info(f"Epoch {epoch+1}/{self.args.WML.num_epochs} completed. Train Loss: {train_loss:.4f}")
             if epoch % self.args.WML.weight_update_frequency == 0:
-                val_loss = self.validate(val_dataloader)
+                val_loss = self.validate(val_dataloader, epoch)
                 logger.info(f"Epoch {epoch+1}/{self.args.WML.num_epochs} completed. "
                             f"Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}"
                             f"Peer weights: {self.peer_weights}")
@@ -121,7 +125,8 @@ class WMLTrainer:
                         "iter": epoch,
                         "train/loss": train_loss,
                         "val/loss": val_loss,
-                        "lr": round(self.learning_rate,4)
+                        "lr": round(self.learning_rate,4),
+                        "WML_weights_lr": round(self.WML_learning_learning,4)
                     })
         self.save_models()
 
@@ -160,7 +165,7 @@ class WMLTrainer:
             final_total_loss += total_loss.item()
         return final_total_loss / self.args.WML.num_batches
 
-    def validate(self, dataloader: torch.utils.data.DataLoader) -> float:
+    def validate(self, dataloader: torch.utils.data.DataLoader, epoch) -> float:
         """
         Perform validation.
 
@@ -240,8 +245,16 @@ class WMLTrainer:
                     for param_L2, param_La in zip(grad_L2_theta[i], grad_La_theta[i]):
                         grad += self.learning_rate * torch.sum(param_L2 * param_La)
                     grad_w.append(grad)
+                
+                # Gradient clipping
+                max_grad_norm = 1.0
+                grad_w_clipped = [torch.clamp(g, -max_grad_norm, max_grad_norm) for g in grad_w]
+
+                # Learning rate schedule for weight updates
+                self.WML_learning_learning = get_lr(epoch,self.args,lr_type="val")
+
                 # Step 3c: Update ω using mirror descent
-                exp_grad = [torch.exp(-self.args.WML.eta * g) for g in grad_w]
+                exp_grad = [torch.exp(-self.WML_learning_learning * g) for g in grad_w_clipped]
                 sum_exp_grad = sum(w * eg for w, eg in zip(self.peer_weights, exp_grad))
                 self.peer_weights = nn.Parameter(torch.tensor([w * eg / sum_exp_grad for w, eg in zip(self.peer_weights, exp_grad)]))
 

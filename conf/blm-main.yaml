@@ -46,7 +46,7 @@ train:
   decay_lr: True # whether to decay the learning rate
   warmup_iters: 10 # how many steps to warm up for
   lr_decay_iters: 500 # should be ~= max_iters per Chinchilla
-  min_lr: 0.00006 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+  min_lr: 0.0001 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
   wandb_log: True
   wandb_project: baby_lm_WML
   wandb_run_name: 'GPT2_MRL_'
@@ -59,19 +59,25 @@ train:
 
 WML:
   checkpoint_path: "GPT2_MRL_500_ckpt.pt"
-  prune_ratios: [0.9,0.3]
+  num_peers: 3 
+  bayesian_init_points: 10
+  bayesian_n_iter: 100
+  prune_ratio_range: [0.1,0.5]
   prune_importance: 'l1'
   layer_bound: 0.9
   batch_size: 64
   num_epochs: 500
   loss_alpha: 0.5
   num_batches: 20
-  eta: 0.05
+  warmup_iters: 5
+  learning_rate: 0.009
+  lr_decay_iters: 500
+  min_lr: 0.0009
   shuffle: True
   wandb_log: True
   wandb_project: baby_lm_WML
-  wandb_run_name: 'GPT2_WML'
-  model_output_path: "models/WML"
+  wandb_run_name: 'GPT2_WML_tree_search'
+  model_output_path: "models/WML_tree_search"
   weight_update_frequency: 10
 
 MRL:

@@ -64,18 +64,31 @@ def estimate_loss(model,args,ctx):
     return out
 
 # learning rate decay scheduler (cosine with warmup)
-def get_lr(iter,args):
-    # 1) linear warmup for warmup_iters steps
-    if iter < args.train.warmup_iters:
-        return args.train.learning_rate * iter / args.train.warmup_iters
-    # 2) if it > lr_decay_iters, return min learning rate
-    if iter > args.train.lr_decay_iters:
-        return args.train.min_lr
-    # 3) in between, use cosine decay down to min learning rate
-    decay_ratio = (iter - args.train.warmup_iters) / (args.train.lr_decay_iters - args.train.warmup_iters)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
-    return args.train.min_lr + coeff * (args.train.learning_rate - args.train.min_lr)
+def get_lr(iter, args, lr_type):
+    if lr_type == "train":
+        # 1) linear warmup for warmup_iters steps
+        if iter < args.train.warmup_iters:
+            return args.train.learning_rate * iter / args.train.warmup_iters
+        # 2) if it > lr_decay_iters, return min learning rate
+        if iter > args.train.lr_decay_iters:
+            return args.train.min_lr
+        # 3) in between, use cosine decay down to min learning rate
+        decay_ratio = (iter - args.train.warmup_iters) / (args.train.lr_decay_iters - args.train.warmup_iters)
+        assert 0 <= decay_ratio <= 1
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+        return args.train.min_lr + coeff * (args.train.learning_rate - args.train.min_lr)
+    elif lr_type == "val":
+         # 1) linear warmup for warmup_iters steps
+        if iter < args.WML.warmup_iters:
+            return args.WML.learning_rate * iter / args.WML.warmup_iters
+        # 2) if it > lr_decay_iters, return min learning rate
+        if iter > args.WML.lr_decay_iters:
+            return args.WML.min_lr
+        # 3) in between, use cosine decay down to min learning rate
+        decay_ratio = (iter - args.WML.warmup_iters) / (args.WML.lr_decay_iters - args.WML.warmup_iters)
+        assert 0 <= decay_ratio <= 1
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+        return args.WML.min_lr + coeff * (args.WML.learning_rate - args.WML.min_lr)
 
 def get_vocab_size(args):
     meta_path = base_path + '/' + args.train.tokenizer_path
