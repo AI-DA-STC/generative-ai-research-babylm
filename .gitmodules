@@ -1,0 +1,3 @@
+[submodule "evaluation_pipeline"]
+	path = evaluation_pipeline
+	url = https://github.com/babylm/evaluation-pipeline-2024.git
