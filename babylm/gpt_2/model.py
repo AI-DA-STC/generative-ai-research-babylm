@@ -244,8 +244,14 @@ class GPT(nn.Module):
         """
         # Forward pass: get logits from the model
         outputs = model(input_ids)
-        logits = outputs.logits  # Assuming your model outputs an object with a logits attribute
+        logits = outputs[0][0]  # Assuming your model outputs an object with a logits attribute
 
+        # Handle case where input_ids is shorter than target_ids
+        if logits.size(0) < target_ids.size(1):
+        # Pad logits with zeros to match target_ids length
+            pad_length = target_ids.size(1) - logits.size(0)
+            logits = F.pad(logits, (0, 0, 0, pad_length), "constant", 0)
+            
         # Shift logits and targets to align for calculating the log likelihood of next tokens
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = target_ids[..., 1:].contiguous()
@@ -256,8 +262,10 @@ class GPT(nn.Module):
 
         # Calculate log probabilities using log softmax
         log_probs = F.log_softmax(flat_logits, dim=-1)
-
+        
         # Gather the log probabilities of the actual next tokens
+        logger.info(f"log_probs {log_probs.shape}")
+        logger.info(f"flat_labels.unsqueeze(1) {flat_labels.unsqueeze(1)}")
         log_probs = log_probs.gather(dim=1, index=flat_labels.unsqueeze(1)).squeeze(1)
 
         # Sum log probabilities for the entire sequence/batch to get the log likelihood

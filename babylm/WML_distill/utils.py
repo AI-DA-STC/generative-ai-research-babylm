@@ -96,7 +96,37 @@ def get_dataloader(split: str, model: nn.Module, device: torch.device, num_batch
 
     return dataloader
 
-def wml_loss(outputs, labels, peer_outputs, weights, alpha):
+def stable_kl_div(p_logits, q_logits, eps=1e-10):
+    """
+    Compute stable KL divergence between two distributions given their logits.
+    
+    Args:
+    p_logits (torch.Tensor): logits of distribution P
+    q_logits (torch.Tensor): logits of distribution Q
+    eps (float): small constant for numerical stability
+    
+    Returns:
+    torch.Tensor: KL divergence
+    """
+    # Apply log-sum-exp trick for numerical stability
+    p_max = torch.max(p_logits, dim=-1, keepdim=True)[0]
+    q_max = torch.max(q_logits, dim=-1, keepdim=True)[0]
+    
+    p_logits = p_logits - p_max
+    q_logits = q_logits - q_max
+    
+    p = F.softmax(p_logits, dim=-1)
+    log_p = F.log_softmax(p_logits, dim=-1)
+    log_q = F.log_softmax(q_logits, dim=-1)
+    
+    kl_div = torch.sum(p * (log_p - log_q), dim=-1)
+    
+    # Ensure non-negative KL divergence
+    kl_div = torch.clamp(kl_div, min=0.0)
+    
+    return kl_div.mean()
+
+def wml_loss(labels, peer_outputs, weights, alpha):
     """
     Compute the Weighted Mutual Learning loss for GPT-2.
     
@@ -107,21 +137,33 @@ def wml_loss(outputs, labels, peer_outputs, weights, alpha):
     :param alpha: Balancing factor between CE loss and KL divergence
     """
     # Cross-entropy loss
-    #ce_loss = torch.stack([F.cross_entropy(F.softmax(output_i.squeeze(1), dim=-1), F.softmax(labels.squeeze(1),dim=-1)) for output_i in outputs])
-    ce_loss = torch.stack([F.cross_entropy(output_i.squeeze(1), labels.argmax(dim=-1)) for output_i in outputs])
-    mean_ce_loss = ce_loss.mean()
+    ce_losses = []
+    for i, output_i in enumerate(peer_outputs):
+        dimensions_ce_loss = []
+        for dim in range(5):
+            dimensions_ce_loss.append(F.cross_entropy(output_i[dim].squeeze(1), labels[dim].argmax(dim=-1)))
+        mean_ce = torch.stack(dimensions_ce_loss).mean()
+        ce_losses.append(weights[i] * mean_ce)
+    total_ce_loss = sum(ce_losses)
+    #logger.info(f"total_ce_loss {total_ce_loss}")
     # KL divergence loss
-    kl_loss = 0
-    kl = []
-    for i, peer_output in enumerate(peer_outputs):
-        for j, output_j in enumerate(outputs):
-            p = F.softmax(outputs[j].squeeze(1), dim=-1)
-            log_p = F.log_softmax(outputs[j].squeeze(1), dim=-1)
-            log_q = F.log_softmax(peer_output[j].squeeze(1), dim=-1)
-            kl_loss += torch.sum(weights[i] * (p * (log_p - log_q)),dim=-1).mean()
-            kl.append(kl_loss)
-    mean_kl_loss = torch.stack(kl).mean()
+    kl_losses = []
+    for i, output_i in enumerate(peer_outputs):
+        for j, output_j in enumerate(peer_outputs):
+            if i != j:
+                dimension_kls = []
+                for dim in range(5):
+                    p = F.log_softmax(output_i[dim].squeeze(1), dim=-1)
+                    q = F.log_softmax(output_j[dim].squeeze(1), dim=-1)
+                    kl = F.kl_div(p, q, reduction='batchmean', log_target=True)
+                    dimension_kls.append(kl)
+                
+                mean_kl = torch.stack(dimension_kls).mean()
+                kl_losses.append(weights[j] * mean_kl)
+    total_kl_loss = sum(kl_losses)
+    #logger.info(f"total_kl_loss {total_kl_loss}")
     # Combine losses
-    loss = (1 - alpha) * mean_ce_loss + alpha * mean_kl_loss
-    return loss
+    list_of_losses = [(1-alpha)*ce for ce in ce_losses] + [(1-alpha)*ke for ke in kl_losses]
+    loss = (1 - alpha) * total_ce_loss + alpha * total_kl_loss
+    return loss, list_of_losses
 
