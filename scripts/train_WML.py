@@ -3,7 +3,8 @@ import hydra
 import logging
 import sys
 from pathlib import Path
-from omegaconf import DictConfig
+from omegaconf import DictConfig,OmegaConf
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,23 @@ def train(args: DictConfig) -> None:
 
     blm.general.schema.validate_config(args, strict=args.validate_config.strict)
 
-    trainer = blm.WML_distill.train.WMLTrainer(args)
-    trainer.train()
+    num_peers_range = [8]  
+
+    for num_peers in num_peers_range:
+        # Create a deep copy of the original args
+        current_args = copy.deepcopy(args)
+        
+        OmegaConf.update(current_args, "WML.num_peers", num_peers, merge=True)
+        OmegaConf.update(current_args, "WML.wandb_run_name", "GPT2_WML_tree_search_n_peer_" + str(num_peers) , merge=True)
+        OmegaConf.update(current_args, "WML.model_output_path", "models/WML/n_peer_" + str(num_peers), merge=True)
+        
+        logger.info(f"Training with num_peers {current_args.WML.num_peers}")
+        logger.info(f"New wandb run {current_args.WML.wandb_run_name}")
+        logger.info(f"model output path {current_args.WML.model_output_path}")
+
+        # Create and run the trainer with the modified arguments
+        trainer = blm.WML_distill.train.WMLTrainer(current_args)
+        trainer.train()
 
 if __name__ == "__main__":
     train()

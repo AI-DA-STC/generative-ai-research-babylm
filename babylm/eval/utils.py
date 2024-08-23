@@ -23,11 +23,11 @@ def download_checkpoint(args):
 def load_checkpoint(args,ckpt_path,meta_vocab_size):
     pt_file = base_path + args.eval.model_local_path + '/' + ckpt_path
     checkpoint = torch.load(pt_file, map_location=args.train.device)
-    checkpoint_model_args = checkpoint['model_args']
+    '''checkpoint_model_args = checkpoint['model_args']
     model_args = dict(n_layer=args.train.n_layer, n_head=args.train.n_head, n_embd=args.train.n_embd, block_size=args.train.block_size,
                     bias=args.train.bias, vocab_size=None, dropout=args.train.dropout)
     for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
-        model_args[k] = checkpoint_model_args[k]
+        model_args[k] = checkpoint_model_args[k]'''
     GPT_model = blm.gpt_2.model.GPT(args,meta_vocab_size)
     state_dict = checkpoint['model']
     unwanted_prefix = '_orig_mod.'
