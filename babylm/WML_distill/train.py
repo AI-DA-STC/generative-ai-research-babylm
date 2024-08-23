@@ -1,6 +1,6 @@
 import os
-import json
 import torch
+import pandas as pd
 import torch.nn as nn
 import logging
 import wandb
@@ -37,10 +37,27 @@ class WMLTrainer:
         self.WML_learning_learning = args.WML.learning_rate
         self.device = args.train.device
         self.base_model = self.load_base_model()
-        self.peer_models = self.create_peer_models()
+        self.peer_models, self.best_configs = self.create_peer_models()
         self.peer_weights = nn.Parameter(torch.ones(len(self.peer_models), device=self.device) / len(self.peer_models))
         self.scaler = GradScaler()
         self.datetime = datetime.now()
+        # setup logging using weights and biases https://wandb.ai/site
+        if self.args.WML.wandb_log:
+            serializable_config = OmegaConf.to_container(self.args, resolve=True, throw_on_missing=True)
+            wandb.init(project=self.args.WML.wandb_project, name=self.args.WML.wandb_run_name+str(self.datetime), config=serializable_config)
+        self.train_val_loss_difff = []
+
+    def get_grad_stats(self,model):
+        grad_norm = 0
+        grad_max = 0
+        grad_min = 0
+        for param in model.parameters():
+            if param.grad is not None:
+                grad_norm += param.grad.data.norm(2).item() ** 2
+                grad_max = max(grad_max, param.grad.data.max().item())
+                grad_min = min(grad_min, param.grad.data.min().item())
+        grad_norm = grad_norm ** 0.5
+        return grad_norm, grad_max, grad_min
 
     def load_base_model(self) -> torch.nn.Module:
         """
@@ -75,7 +92,7 @@ class WMLTrainer:
             for param in peer_model.parameters():
                 param.requires_grad = True
         
-        return peer_models
+        return peer_models,best_configs
     
     def create_optimizer(self, learning_rate) -> torch.optim.Optimizer:
         """
@@ -105,26 +122,25 @@ class WMLTrainer:
                                                 self.args.WML.shuffle,
                                                 self.args.WML.batch_size,
                                                 self.args.train.block_size)
-        # setup logging using weights and biases https://wandb.ai/site
-        if self.args.WML.wandb_log:
-            serializable_config = OmegaConf.to_container(self.args, resolve=True, throw_on_missing=True)
-            wandb.init(project=self.args.WML.wandb_project, name=self.args.WML.wandb_run_name+str(self.datetime), config=serializable_config)
     
         for epoch in range(self.args.WML.num_epochs):
             self.learning_rate = get_lr(epoch,self.args,lr_type='train')
             train_loss = self.train_epoch(train_dataloader)
             logger.info(f"Epoch {epoch+1}/{self.args.WML.num_epochs} completed. Train Loss: {train_loss:.4f}")
             if epoch % self.args.WML.weight_update_frequency == 0:
-                val_loss = self.validate(val_dataloader, epoch)
+                val_loss, ensemble_loss = self.validate(val_dataloader, epoch)
                 logger.info(f"Epoch {epoch+1}/{self.args.WML.num_epochs} completed. "
                             f"Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}"
                             f"Peer weights: {self.peer_weights}")
                 
+                self.train_val_loss_difff.append(train_loss - val_loss)
+                logger.info(f"train - val loss {self.train_val_loss_difff}")
                 if self.args.WML.wandb_log:
                     wandb.log({
                         "iter": epoch,
                         "train/loss": train_loss,
                         "val/loss": val_loss,
+                        "WML_ensemble_loss": ensemble_loss,
                         "lr": round(self.learning_rate,4),
                         "WML_weights_lr": round(self.WML_learning_learning,4)
                     })
@@ -147,19 +163,22 @@ class WMLTrainer:
         for step, batch in tqdm(enumerate(dataloader), total=self.args.WML.num_batches, desc="Training"):
             inputs, labels = batch
             if self.args.MRL.enable:
-                labels = labels[0].squeeze().reshape(self.args.WML.batch_size, -1).to(self.device)
+                labels = [label_i.squeeze().reshape(self.args.WML.batch_size, -1).to(self.device) for label_i in labels]
             else:
                 labels = labels.squeeze().reshape(self.args.WML.batch_size, -1).to(self.device)
             self.create_optimizer(self.learning_rate).zero_grad()
 
             with autocast():
                 peer_outputs = [model(inputs)[0] for model in self.peer_models]
-                losses = [utils.wml_loss(outputs, labels, peer_outputs[:i] + peer_outputs[i+1:],
-                                   torch.cat([self.peer_weights[:i], self.peer_weights[i+1:]]),
-                                   self.args.WML.loss_alpha)
-                          for i, outputs in enumerate(peer_outputs)]
-                total_loss = sum(losses)
+                total_loss, peer_losses = utils.wml_loss(labels,peer_outputs,self.peer_weights,self.args.WML.loss_alpha)
             self.scaler.scale(total_loss).backward()
+            # clip the gradient
+            if self.args.WML.grad_clip != 0.0:
+                self.scaler.unscale_(self.create_optimizer(self.learning_rate))
+                for model in self.peer_models:
+                    grad_norm, grad_max, grad_min = self.get_grad_stats(model)
+                    #logger.info(f"Gradient Norm: {grad_norm}, Max: {grad_max}, Min: {grad_min}")
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.WML.grad_clip)
             self.scaler.step(self.create_optimizer(self.learning_rate))
             self.scaler.update()
             final_total_loss += total_loss.item()
@@ -185,36 +204,25 @@ class WMLTrainer:
             inputs, labels = batch
             inputs = inputs.to(self.device)
             if self.args.MRL.enable:
-                labels = labels[0].squeeze().reshape(self.args.WML.batch_size, -1).to(self.device)
+                labels = [label_i.squeeze().reshape(self.args.WML.batch_size, -1).to(self.device) for label_i in labels]
             else:
                 labels = labels.squeeze().reshape(self.args.WML.batch_size, -1).to(self.device)
             with torch.no_grad():
                 peer_outputs = [model(inputs)[0] for model in self.peer_models]
-                losses = [utils.wml_loss(outputs, labels, peer_outputs[:i] + peer_outputs[i+1:],
-                                torch.cat([self.peer_weights[:i], self.peer_weights[i+1:]]),
-                                self.args.WML.loss_alpha)
-                        for i, outputs in enumerate(peer_outputs)]
-                total_loss = sum(losses)
+                total_loss, peer_losses = utils.wml_loss(labels,peer_outputs,self.peer_weights,self.args.WML.loss_alpha)
             
             final_total_loss += total_loss.item()
-                
-            with torch.enable_grad(): 
-                peer_outputs = [model(inputs)[0] for model in self.peer_models]
-                losses = [utils.wml_loss(outputs, labels, peer_outputs[:i] + peer_outputs[i+1:],
-                            torch.cat([self.peer_weights[:i], self.peer_weights[i+1:]]),
-                            self.args.WML.loss_alpha)
-                        for i, outputs in enumerate(peer_outputs)]
-
+            with torch.enable_grad():
                 # Step 3a: Calculate ensemble loss (cross-entropy loss between weighted ensemble and ground truth)
-                # weighted ensemble = ∑i to peer_models ∑ j to matryoshka_size  (w[i] * peer_outputs[matryoshka_size]) / matryoshka_size
-                weighted_ensemble = torch.zeros_like(peer_outputs[0][0])  
-                for i, weight in enumerate(self.peer_weights):
-                    peer_output_sum = torch.zeros_like(peer_outputs[0][0])
-                    for j in range(len(peer_outputs[0])):  
-                        peer_output_sum += peer_outputs[i][j]
-                    weighted_ensemble += weight * (peer_output_sum / len(peer_outputs[0]))  # Average across all matryoshka embeddings
-                ensemble_loss = F.cross_entropy(F.softmax(weighted_ensemble.squeeze(1),dim=-1), F.softmax(labels.squeeze(1),dim=-1))
-
+                ce_losses = []
+                for i, output_i in enumerate(peer_outputs):
+                    dimensions_ce_loss = []
+                    for dim in range(5):
+                        dimensions_ce_loss.append(self.peer_weights[i] * F.cross_entropy(output_i[dim].squeeze(1), labels[dim].argmax(dim=-1)))
+                    mean_ce = torch.stack(dimensions_ce_loss).mean()
+                    ce_losses.append(mean_ce)
+                ensemble_loss = sum(ce_losses)
+                
                 # Step 3b: Calculate ∇ωL2 using Theorem 1 from https://proceedings.neurips.cc/paper_files/paper/2022/file/4b25c000967af9036fb9b207b198a626-Paper-Conference.pdf
                 
                 grad_L2_theta = []  # Will store dL2/dθ for each peer
@@ -231,11 +239,12 @@ class WMLTrainer:
                         )])
 
                     # Calculate La = (1-α)LCE(zi, Y) + α ∑(KL(zj, zi))
-                    La = losses[i]
+                    La = peer_losses[i]
+                    La = La.detach().requires_grad_(True)
 
                     # Calculate dLa/dθ
                     grad_La_theta.append([g if g is not None else torch.zeros_like(p).to(self.device) for g, p in zip(
-                        torch.autograd.grad(La, model.parameters(), allow_unused=True),
+                        torch.autograd.grad(La, model.parameters(),retain_graph=True, allow_unused=True),
                         model.parameters()
                         )])
                 # Calculate the final gradient: ∇ωiL2 = dL2/dωi - γ*(dL2/dθ)*(dLa/dθ)T
@@ -258,10 +267,18 @@ class WMLTrainer:
                 sum_exp_grad = sum(w * eg for w, eg in zip(self.peer_weights, exp_grad))
                 self.peer_weights = nn.Parameter(torch.tensor([w * eg / sum_exp_grad for w, eg in zip(self.peer_weights, exp_grad)]))
 
-        return final_total_loss / self.args.WML.num_batches
+        return final_total_loss / self.args.WML.num_batches, ensemble_loss
 
     def save_models(self):
-        """Save the trained peer models."""
+        """Save the trained peer models and best pruning configs"""
+
+        df = pd.DataFrame(self.best_configs)
+        artifact = wandb.Artifact("best_pruning_config", type="dataset")
+        artifact.add(wandb.Table(dataframe=df), "best_pruning_config")
+        wandb.log_artifact(artifact)
+
+        # Log the artifact to the run
+        wandb.log_artifact(artifact)
 
         for i, (model, weight) in enumerate(zip(self.peer_models, self.peer_weights)):
             logger.info(f"Peer {i+1} weight: {weight.item():.4f}")
@@ -271,6 +288,7 @@ class WMLTrainer:
                         'config': self.args.WML,
                         'peer_weight': weight
                     }
+            os.makedirs(base_path + '/' + self.args.WML.model_output_path,exist_ok=True)
             torch.save(checkpoint, os.path.join(base_path + '/' + self.args.WML.model_output_path, self.args.WML.wandb_run_name + f'peer_{i+1}_ckpt.pt'))
             logger.info(f"saved peer_model_{i+1}.pt checkpoint to local drive")
             
