@@ -1,5 +1,5 @@
 tokenizer_model_path: "/Users/krishnaiyer/generative-ai-research-babylm/models/tokenizer/train_10M/GPT2"
-model_path: "/Users/krishnaiyer/generative-ai-research-babylm/models/gpt-2/GPT2_MRL_500_ckpt.pt"
+model_path: "/Users/krishnaiyer/generative-ai-research-babylm/models/gpt-2/MRL_mean_loss_2000_ckpt.pt"
 device: "mps"
 model_args_path: "/Users/krishnaiyer/generative-ai-research-babylm/conf/blm-main.yaml"
 max_length: 64

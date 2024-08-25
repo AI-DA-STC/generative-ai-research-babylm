@@ -88,7 +88,7 @@ class GPT(nn.Module):
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = self.lm_head(x) # note: using list [-1] to preserve the time dim
             loss = None
 
         return logits, loss
@@ -230,42 +230,100 @@ class GPT(nn.Module):
 
         return idx
     
-    def loglikelihood(self, model, input_ids, target_ids):
-        """
-        Calculates the log likelihood of the target tokens given the input tokens.
-        
-        Parameters:
-            model (torch.nn.Module): The GPT-2 model.
-            input_ids (torch.Tensor): Tensor of input token IDs (batch_size, sequence_length).
-            target_ids (torch.Tensor): Tensor of target token IDs, which are the expected outputs (batch_size, sequence_length).
-        
-        Returns:
-            float: The total log likelihood for the batch.
-        """
-        # Forward pass: get logits from the model
-        outputs = model(input_ids)
-        logits = outputs[0][0]  # Assuming your model outputs an object with a logits attribute
+    def _model_call(self, model, inps: torch.Tensor) -> torch.Tensor:
+        max_length = 64
 
-        # Handle case where input_ids is shorter than target_ids
-        if logits.size(0) < target_ids.size(1):
-        # Pad logits with zeros to match target_ids length
-            pad_length = target_ids.size(1) - logits.size(0)
-            logits = F.pad(logits, (0, 0, 0, pad_length), "constant", 0)
+        if inps.size(1) <= max_length:
+            if self.args.MRL.enable:
+                return model(inps)[0][0]
+            else:
+                return model(inps)[0]
+        else:
+            # Sliding window approach
+            stride = max_length // 2
+            all_logits = []
+            for i in range(0, inps.size(1), stride):
+                chunk = inps[:, i:min(i+max_length, inps.size(1))]
+
+                if self.args.MRL.enable:
+                    logits = model(chunk)[0][0]
+                else:
+                    logits = model(chunk)[0]
+                
+                # Expand logits if necessary
+                if logits.size(1) == 1:
+                    logits = logits.expand(-1, chunk.size(1), -1)
+                
+                all_logits.append(logits)
             
-        # Shift logits and targets to align for calculating the log likelihood of next tokens
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = target_ids[..., 1:].contiguous()
+            # Combine logits from all windows
+            final_logits = torch.zeros((inps.size(0), inps.size(1), all_logits[0].size(-1)), device=inps.device)
+            
+            for i, start in enumerate(range(0, inps.size(1), stride)):
+                end = min(start + max_length, inps.size(1))
+                overlap = max(0, start - (i-1)*stride) if i > 0 else 0
+                final_logits[:, start:end] = all_logits[i][:, :end-start]
+            
+        return final_logits
+    
+    def loglikelihood(self, model, input_ids, target_ids):
+        # Forward pass: get logits from the model
+        logger.info(f"input ids {input_ids.shape}")
+        logits = self._model_call(model, input_ids)
+        logger.info(f"logits from model output {logits.shape}")
 
-        # Flatten the logits and labels to feed into log_softmax and nll_loss
-        flat_logits = shift_logits.view(-1, shift_logits.size(-1))
-        flat_labels = shift_labels.view(-1)
+        # Move vocab dimension last as we do classification over these
+        logits = logits.permute(0, 2, 1)
+        logger.info(f"logits from model output after permute {logits.shape}")
+
+        # Task: Next-token-prediction => shift tokens
+        target_ids = target_ids[:, 1:]
+        logits = logits[:, :, :-1]
+        logger.info(f"target ids after shifting {target_ids.shape}")
+        logger.info(f"logits from model output after shifting {logits.shape}")
+
+        losses = torch.nn.CrossEntropyLoss(reduction="none")(logits, target_ids)
+
+        # Ensure logits and target_ids have the same sequence length
+        '''seq_len = min(logits.size(1), target_ids.size(1))
+        logits = logits[:, :seq_len, :]
+        target_ids = target_ids[:, :seq_len]
+
+        # Don't shift, just use the logits as is
+        flat_logits = logits.view(-1, logits.size(-1))
+        flat_labels = target_ids.view(-1)
 
         # Calculate log probabilities using log softmax
         log_probs = F.log_softmax(flat_logits, dim=-1)
         
+        # Gather the log probabilities of the actual tokens
+        gathered_log_probs = log_probs.gather(dim=1, index=flat_labels.unsqueeze(1)).squeeze(1)
+
+        # Sum log probabilities for the entire sequence/batch to get the log likelihood
+        total_log_likelihood = gathered_log_probs.sum()'''
+
+        return -losses.sum().item()
+    
+    def loglikelihood_rolling(self, model, input_ids, target_ids):
+        # Calculate log likelihood using your custom function
+        logits = self._model_call(model, input_ids)
+
+        # Ensure logits and target_ids have the same sequence length
+        seq_len = min(logits.size(1), target_ids.size(1))
+        logits = logits[:, :seq_len, :]
+        target_ids = target_ids[:, :seq_len]
+
+        logger.info(f"logits {logits.shape}")
+        logger.info(f"target_ids {target_ids.shape}")
+
+        # Flatten the logits and labels to feed into log_softmax and nll_loss
+        flat_logits = logits.view(-1, logits.size(-1))
+        flat_labels = target_ids.view(-1)
+
+        # Calculate log probabilities using log softmax
+        log_probs = F.log_softmax(flat_logits, dim=-1)
+
         # Gather the log probabilities of the actual next tokens
-        logger.info(f"log_probs {log_probs.shape}")
-        logger.info(f"flat_labels.unsqueeze(1) {flat_labels.unsqueeze(1)}")
         log_probs = log_probs.gather(dim=1, index=flat_labels.unsqueeze(1)).squeeze(1)
 
         # Sum log probabilities for the entire sequence/batch to get the log likelihood

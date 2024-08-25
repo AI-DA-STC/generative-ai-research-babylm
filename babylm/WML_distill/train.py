@@ -132,9 +132,10 @@ class WMLTrainer:
                 logger.info(f"Epoch {epoch+1}/{self.args.WML.num_epochs} completed. "
                             f"Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}"
                             f"Peer weights: {self.peer_weights}")
-                
-                self.train_val_loss_difff.append(train_loss - val_loss)
-                logger.info(f"train - val loss {self.train_val_loss_difff}")
+                if self.args.WML.enable_early_stopping:
+                    if abs(train_loss-val_loss) > self.args.WML.early_stopping_min_delta:
+                        logger.info(F"Early stopping condition met : {abs(train_loss-val_loss)} > {self.args.WML.early_stopping_min_delta} Stop training now.")
+                        break
                 if self.args.WML.wandb_log:
                     wandb.log({
                         "iter": epoch,
@@ -144,6 +145,7 @@ class WMLTrainer:
                         "lr": round(self.learning_rate,4),
                         "WML_weights_lr": round(self.WML_learning_learning,4)
                     })
+                
         self.save_models()
 
     def train_epoch(self, dataloader: torch.utils.data.DataLoader) -> float:
