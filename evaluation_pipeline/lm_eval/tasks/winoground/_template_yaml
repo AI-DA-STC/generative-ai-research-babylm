@@ -1,0 +1,15 @@
+group: winoground_filtered
+dataset_path: json
+output_type: multiple_choice
+doc_to_image_id: image_idx
+doc_to_image_key: image_key
+doc_to_text: ""
+doc_to_target: 0
+doc_to_choice: "{{[caption_0, caption_1]}}"
+num_fewshot: 0
+should_decontaminate: true
+doc_to_decontamination_query: "{{question}} {{image_id}}"
+metric_list:
+  - metric: acc
+metadata:
+  version: 1.0

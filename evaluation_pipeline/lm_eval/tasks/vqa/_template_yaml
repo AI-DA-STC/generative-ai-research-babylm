@@ -1,0 +1,14 @@
+group: vqa_filtered
+dataset_path: json
+output_type: multiple_choice
+doc_to_image_id: idx_in_hf_dataset
+doc_to_text: "Question: {{question}} Answer:"
+doc_to_target: 0
+doc_to_choice: "{{[target_ans, distractors[0], distractors[1], distractors[2], distractors[3], distractors[4], distractors[5], distractors[6]]}}"
+num_fewshot: 0
+should_decontaminate: true
+doc_to_decontamination_query: "{{question}} {{image_id}}"
+metric_list:
+  - metric: acc
+metadata:
+  version: 1.0
