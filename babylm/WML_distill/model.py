@@ -141,13 +141,18 @@ class PeerModel(nn.Module):
         return self.model(x)
     
 class EnsembleModel(torch.nn.Module):
-    def __init__(self, peer_models, weights):
+    def __init__(self, peer_models, weights, MRL_enable, MRL_index):
         super().__init__()
         self.peer_models = torch.nn.ModuleList(peer_models)
         self.weights = torch.tensor(weights)
         self.weights = self.weights / self.weights.sum()  # Normalize weights
+        self.MRL_enable = MRL_enable
+        self.MRL_index = MRL_index
     
     def forward(self, x):
-        outputs = [model(x)[0] for model in self.peer_models]
+        if self.MRL_enable:
+            outputs = [model(x)[0][self.MRL_index] for model in self.peer_models]
+        else:
+            outputs = [model(x)[0] for model in self.peer_models]
         weighted_outputs = [w * out for w, out in zip(self.weights, outputs)]
         return torch.stack(weighted_outputs).sum(dim=0)
