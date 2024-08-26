@@ -1,0 +1,3 @@
+[submodule "evaluation_pipeline"]
+	path = evaluation_pipeline
+	url = https://github.com/AI-DA-STC/generative-ai-research-babylm.git
