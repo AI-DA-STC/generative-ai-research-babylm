@@ -1,5 +1,5 @@
 tokenizer_model_path: "/Users/krishnaiyer/generative-ai-research-babylm/models/tokenizer/train_10M/GPT2_WML"
-model_path: "/Users/krishnaiyer/generative-ai-research-babylm/models/WML/n_peer_4/n_peer_4_4.pt"
+model_path: "/Users/krishnaiyer/generative-ai-research-babylm/models/WML/n_peer_2"
 device: "mps"
 model_args_path: "/Users/krishnaiyer/generative-ai-research-babylm/conf/blm-main.yaml"
 max_length: 64
@@ -8,4 +8,5 @@ MRL_enabled: True
 MRL_dim_idx: 0 
 temperature: 0.1
 top_k: 20
-evaluate_ensemble: False
+evaluate_ensemble: True
+

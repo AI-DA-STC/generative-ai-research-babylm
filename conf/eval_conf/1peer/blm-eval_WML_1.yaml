@@ -8,4 +8,5 @@ MRL_enabled: True
 MRL_dim_idx: 0 
 temperature: 0.1
 top_k: 20
+evaluate_ensemble: False
 

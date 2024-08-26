@@ -139,3 +139,15 @@ class PeerModel(nn.Module):
             torch.Tensor: Output tensor.
         """
         return self.model(x)
+    
+class EnsembleModel(torch.nn.Module):
+    def __init__(self, peer_models, weights):
+        super().__init__()
+        self.peer_models = torch.nn.ModuleList(peer_models)
+        self.weights = torch.tensor(weights)
+        self.weights = self.weights / self.weights.sum()  # Normalize weights
+    
+    def forward(self, x):
+        outputs = [model(x)[0] for model in self.peer_models]
+        weighted_outputs = [w * out for w, out in zip(self.weights, outputs)]
+        return torch.stack(weighted_outputs).sum(dim=0)
