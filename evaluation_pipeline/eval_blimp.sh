@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONFIG_DIR="/Users/krishnaiyer/generative-ai-research-babylm/conf/eval_config_ensemble"
+CONFIG_DIR="/home/coder/generative-ai-research-babylm/conf/eval_config_ensemble"
 OUTPUT_BASE_DIR="results/blimp/GPT2"
 
 process_yaml() {
@@ -20,7 +20,9 @@ process_yaml() {
     python -m lm_eval --model gpt2-custom \
     --model_args config_path="$config_path" \
     --tasks blimp_filtered,blimp_supplement,glue \
-    --output_path "$output_path"
+    --output_path "$output_path" \
+    --wandb_args project=baby_lm_eval \
+    --log_samples
     
     echo "Evaluation complete for $config_path"
     echo "Results saved to $output_path"

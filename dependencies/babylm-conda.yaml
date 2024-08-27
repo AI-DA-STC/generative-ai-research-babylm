@@ -1,4 +1,4 @@
-name: ste-genai-coach-wp1-rev
+name: baby-lm
 channels:
   - conda-forge
 dependencies:
