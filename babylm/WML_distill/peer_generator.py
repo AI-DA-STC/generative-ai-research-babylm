@@ -138,6 +138,8 @@ def compute_sparsity(pruned_model):
     return zero_params / total_params
 
 def optimize_peer_models(base_model: nn.Module, num_peers: int, num_layers: int, base_heads: int, bayesian_init_points: int = 10, bayesian_n_iter: int = 100, prune_ratio_range: tuple = (0.1,0.5)) -> List[List[Tuple[int, int, float]]]:
+    if num_peers > 1:
+        num_peers = num_peers - 1 #keep 1 model always unpruned
     pruning_tree = create_pruning_tree(num_layers, base_heads)
     
     def objective(**kwargs):

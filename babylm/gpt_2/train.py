@@ -61,7 +61,7 @@ def train(args):
     tokens_per_iter = args.train.gradient_accumulation_steps * ddp_world_size * args.train.batch_size * args.train.block_size
 
     if master_process:
-        os.makedirs(args.train.out_dir, exist_ok=True)
+        os.makedirs(os.path.join(base_path,args.train.out_dir), exist_ok=True)
     torch.manual_seed(1337 + seed_offset)
     torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
@@ -97,11 +97,9 @@ def train(args):
         model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
         GPT_model = model.GPT(args,meta_vocab_size)
     elif args.train.init_from == 'resume':
-        logger.info(f"Resuming training from {args.train.out_dir}")
+        logger.info(f"Resuming training from {args.train.ckpt_path}")
         # resume training from a checkpoint.
-        os.makedirs(base_path + '/' + args.train.out_dir + '/' + args.train.wandb_run_name)
-        ckpt_path = os.path.join(base_path + '/' + args.train.out_dir, str(datetime.now())+'_ckpt.pt')
-        checkpoint = torch.load(ckpt_path, map_location=args.train.device)
+        checkpoint = torch.load(os.path.join(base_path,args.train.ckpt_path), map_location=args.train.device)
         checkpoint_model_args = checkpoint['model_args']
         # force these config attributes to be equal otherwise we can't even resume training
         # the rest of the attributes (e.g. dropout) can stay as desired from command line
@@ -157,7 +155,7 @@ def train(args):
     local_iter_num = 0 # number of iterations in the lifetime of this process
     raw_model = GPT_model.module if ddp else GPT_model # unwrap DDP container if needed
     running_mfu = -1.0
-    checkpoint_path = "base_path + '/' + args.train.out_dir + '/checkpoints/'"
+    checkpoint_path = os.path.join(base_path,args.train.out_dir)
     os.makedirs(checkpoint_path,exist_ok=True)
     while True:
 

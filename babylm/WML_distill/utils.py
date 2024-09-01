@@ -1,12 +1,9 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-import json
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 import numpy as np
-import os
 import itertools
-import math
 from pathlib import Path
 from typing import Tuple
 import logging
@@ -53,7 +50,6 @@ class BinaryFileDataset(Dataset):
     def __getitem__(self, idx):
         x = torch.from_numpy(self.data[idx:idx+self.block_size].astype(np.int64))
         y = torch.from_numpy(self.data[idx+1:idx+1+self.block_size].astype(np.int64))
-        
         if self.use_pretrain_model_pred:
             with torch.no_grad():
                 self.pretrained_model.eval()
@@ -62,10 +58,10 @@ class BinaryFileDataset(Dataset):
                 y = y.squeeze(0)  # Shape: (block_size, vocab_size)
         else:
             # Convert y to one-hot encoding
-            y_one_hot = torch.zeros((self.block_size, 50257), dtype=torch.float32)
+            y_one_hot = torch.zeros((self.block_size, 50257), dtype=torch.int32)
             y_one_hot.scatter_(1, y.unsqueeze(1), 1)
-            y = y_one_hot
-        return x.to(self.device), y.to(self.device)
+            y = [y_one_hot.to(self.device) for _ in range(5)]
+        return x.to(self.device), y
 
 def get_dataloader(split: str, model: nn.Module, device: torch.device, num_batches: int, args, shuffle: bool = True, batch_size: int = 256, block_size: int = 64, use_pretrain_model_pred: bool = False) -> Tuple[DataLoader, int]:
     """
@@ -95,36 +91,6 @@ def get_dataloader(split: str, model: nn.Module, device: torch.device, num_batch
         dataloader = itertools.islice(dataloader, num_batches)
 
     return dataloader
-
-def stable_kl_div(p_logits, q_logits, eps=1e-10):
-    """
-    Compute stable KL divergence between two distributions given their logits.
-    
-    Args:
-    p_logits (torch.Tensor): logits of distribution P
-    q_logits (torch.Tensor): logits of distribution Q
-    eps (float): small constant for numerical stability
-    
-    Returns:
-    torch.Tensor: KL divergence
-    """
-    # Apply log-sum-exp trick for numerical stability
-    p_max = torch.max(p_logits, dim=-1, keepdim=True)[0]
-    q_max = torch.max(q_logits, dim=-1, keepdim=True)[0]
-    
-    p_logits = p_logits - p_max
-    q_logits = q_logits - q_max
-    
-    p = F.softmax(p_logits, dim=-1)
-    log_p = F.log_softmax(p_logits, dim=-1)
-    log_q = F.log_softmax(q_logits, dim=-1)
-    
-    kl_div = torch.sum(p * (log_p - log_q), dim=-1)
-    
-    # Ensure non-negative KL divergence
-    kl_div = torch.clamp(kl_div, min=0.0)
-    
-    return kl_div.mean()
 
 def wml_loss(labels, peer_outputs, weights, alpha):
     """
@@ -165,5 +131,5 @@ def wml_loss(labels, peer_outputs, weights, alpha):
     # Combine losses
     list_of_losses = [(1-alpha)*ce for ce in ce_losses] + [(1-alpha)*ke for ke in kl_losses]
     loss = (1 - alpha) * total_ce_loss + alpha * total_kl_loss
-    return loss, list_of_losses
+    return loss, list_of_losses, total_ce_loss
 
