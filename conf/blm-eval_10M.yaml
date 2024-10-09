@@ -1,0 +1,6 @@
+device: cuda:1
+evaluate_ensemble: True
+peer_weights: [0.2511,0.2504,0.2484,0.2501]
+model_args_path: /home/coder/generative-ai-research-babylm/conf/blm-main_10M.yaml
+model_path: ["/home/coder/generative-ai-research-babylm/models/RoBERTa_WML/train_10M/n_peer_4_v3/RoBERTa_WML_n_peer_4_v3peer_1_ckpt.pt","/home/coder/generative-ai-research-babylm/models/RoBERTa_WML/train_10M/n_peer_4_v3/RoBERTa_WML_n_peer_4_v3peer_2_ckpt.pt","/home/coder/generative-ai-research-babylm/models/RoBERTa_WML/train_10M/n_peer_4_v3/RoBERTa_WML_n_peer_4_v3peer_3_ckpt.pt","/home/coder/generative-ai-research-babylm/models/RoBERTa_WML/train_10M/n_peer_4_v3/RoBERTa_WML_n_peer_4_v3peer_4_ckpt.pt"]
+config_path: ["/home/coder/generative-ai-research-babylm/models/configs/config_1.json","/home/coder/generative-ai-research-babylm/models/configs/config_2.json","/home/coder/generative-ai-research-babylm/models/configs/config_3.json","/home/coder/generative-ai-research-babylm/models/configs/config_4.json"]

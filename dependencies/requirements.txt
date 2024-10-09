@@ -19,3 +19,5 @@ tqdm==4.66.2
 tokenizers==0.15.2
 transformers==4.37.0 
 bayesian-optimization==1.5.1
+sacremoses==0.1.1
+ftfy==6.2.3

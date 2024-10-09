@@ -1,0 +1,60 @@
+hydra:
+  job:
+    chdir: True
+
+logger:
+  use_log_filename_prefix: false
+  log_filename_prefix: "/var/log/babylm"
+  excluded_handlers: []
+
+validate_config:
+  strict: False
+
+general:
+  exp_name: "RoBERTa_WDML/train_10M_old"
+  wandb_log: False
+  wandb_project: baby_lm_WML_RoBERTa
+  wandb_run_name: 'RoBERTa'
+
+preprocess:
+  train_data_path: "data/processed/train_10M_old/combined_10M.train"
+  dev_data_path: "data/processed/dev_old/combined.dev"
+  test_data_path: "data/processed/test/combined.test"
+  tokenizer_type: from_scratch
+  tokenized_train_data_path: data/processed/train_10M_old/processed_encoded_train.bin
+  tokenized_dev_data_path : "data/processed/dev_old/processed_encoded_val.bin"
+  vocab_size: 50265
+  mask_token_id: 4
+
+WML:
+  model_type: MLM
+  hf_model_name: "roberta-base"
+  device: cuda:0
+  dtype: float16
+  num_peers: 4
+  n_layer: 12
+  n_head: 12
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  bayesian_init_points: 1
+  bayesian_n_iter: 1
+  use_opt_config: True
+  grad_clip: 1.0
+  layer_bound: 0.9
+  batch_size: 3
+  block_size: 512
+  num_epochs: 150
+  loss_alpha: 0.5
+  num_batches: 60
+  warmup_iters: 5
+  step_size: 0.25
+  learning_rate: 0.001
+  min_lr: 0.0001
+  lr_decay_iters: 150
+  min_step_size: 0.00025
+  enable_early_stopping: True
+  early_stopping_min_delta: 2.596 #based on mean+3*std of train-val loss experiments
+  shuffle: True
+  weight_update_frequency: 5
+  distillation_method: "mutual"
