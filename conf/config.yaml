@@ -20,7 +20,7 @@ preprocess:
   train_data_path: "data/processed/train_10M_old/combined_10M.train"
   dev_data_path: "data/processed/dev_old/combined.dev"
   test_data_path: "data/processed/test/combined.test"
-  tokenizer_type: from_scratch
+  tokenizer_type: from_scratch #from_scratch or pretrained or pretrained_hf
   tokenized_train_data_path: data/processed/train_10M_old/processed_encoded_train.bin
   tokenized_dev_data_path : "data/processed/dev_old/processed_encoded_val.bin"
   vocab_size: 50265
@@ -58,3 +58,9 @@ WML:
   shuffle: True
   weight_update_frequency: 5
   distillation_method: "mutual"
+
+eval:
+  tokenizer_type: "pretrained" #or pretrained_hf
+  model_location: "local" #or hf
+  model_name_or_path: "models/RoBERTa_WML/train_10M/n_peer_4_v3/RoBERTa_WML_n_peer_4_v3peer_1_ckpt.pt"
+  model_config_path: "models/RoBERTa_WML/configs/base.json"

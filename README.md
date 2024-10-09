@@ -1,51 +1,40 @@
-babyLM Challenge
-==============================
-
-**Deadlines**
-
-| Task                 | Deadline                                   |
-|----------------------|--------------------------------------------|
-| Results submission   | September 13, 23:59 anywhere on earth (UTC-12) |
-| Paper submission     | September 20, 23:59 anywhere on earth (UTC-12) |
+<h2 align="center"><b><h3>When Babies Teach Babies: Can student knowledge sharing outperform Teacher-Guided Distillation on small datasets?</h3></b></h2><br>
 
 
-**Overview**
+<p align="center">
+  <b>Srikrishna Iyer</b>
+</p>
 
-Huge effort has been put into optimizing LM pretraining at massive scales in the last several years. While growing parameter counts often get the most attention, datasets have also grown by orders of magnitude. For example, Chinchilla sees 1.4 trillion words during training---well over 10000 words for every one word a 13 year old child has heard in their entire life. 
+<p align="center">
+  <i>
+    AI.DA STC, Group Technology Office<br>
+    ST Engineering<br>
+  </i>
+</p>
+<br>
 
-The goal of this shared task is to incentivize researchers with an interest in pretraining or cognitive modeling to focus their efforts on optimizing pretraining given data limitations inspired by human development. Additionally, we hope to democratize research on pretraining—which is typically thought to be practical only for large industry groups—by drawing attention to open problems that can be addressed on a university budget.
+<p align="center">
+  <a href=""><b>Paper</b></a><br>
+  <a href="https://huggingface.co/AI-DA-STC"><b>HuggingFace models</b></a>
+</p>
 
-**Submission Tracks**
+<p align="center">
+  <img src="assets/overview.png" alt="Illustration of our model." width="720"/>  
+</p>
 
-- There are four competition categories: multimodal, strict, strict-small and paper track.
+_______
 
-- We will focus on Strict and Strict-Small Tracks: The strict and strict-small tracks require that submissions are trained on 100M words (for strict) or 10M words (for strict small) of text data. 
+<br>
 
-**Pretraining data**
+This is the official repository for our paper about pre-training sample-efficient language models on a representative 10M and 100M text corpus. Our method builds upon deep mutual learning, introducing a student model search for diverse initialization. We address the limitation of treating students equally by formulating weighted mutual learning as a bi-level optimization problem. The inner loop learns compact students through online distillation, while the outer loop optimizes weights for better knowledge distillation from diverse students. This dynamic weighting strategy eliminates the need for a teacher model, reducing computational requirements. Our evaluations show that teacherless methods can match or surpass teacher-supervised
+approaches.
 
-- Text-only Dataset:  text-only dataset is an updated version of 2023's BabyLM training corpus. It comes in 10M and 100M word variants, consists mostly of transcribed speech, and has a large proportion of simplified language, such as child-directed speech, childrens' storybooks, and simple Wikipedia.
+_______
 
-Contents of the text-only dataset
-- `babylm_100M`: 100M-word training set for the *strict* track.
-- `babylm_10M`: 10M-word training set for the *strict-small* track.
-- `babylm_dev`: Development set for both tracks (10M words)
-- `babylm_test`: Test set for both tracks (10M words)
+<br>
 
-**Composition of the data**
-
-All datasets are sampled from a mixture of 6 data domains, shown below, along with their respective weights in the distributed dataset.
-
-| Source | Weight | Domain | Citation | Website | License |
-| --- | --- | --- | --- | --- | --- |
-| BNC | 8% | Dialogue | BNC Consortium (2007) | [link](http://www.natcorp.ox.ac.uk/) | [link](http://www.natcorp.ox.ac.uk/docs/licence.html) <sup>1</sup> |
-| CHILDES | 29% | Dialogue, Child-Directed | MacWhinney (2000) | | [link](https://talkbank.org/share/rules.html) |
-| Project Gutenberg | 26% | Fiction, Nonfiction | Gerlach & Font-Clos (2020) | [link](https://github.com/pgcorpus/gutenberg) | [link](https://www.gutenberg.org/policy/license.html) |
-| OpenSubtitles | 20% | Dialogue, Scripted | Lison & Tiedermann (2016) | [link](https://opus.nlpl.eu/OpenSubtitles-v2018.php) | Open source |
-| Simple English Wikipedia | 15% | Nonfiction | -- | [link](https://dumps.wikimedia.org/simplewiki/20221201/) | [link](https://dumps.wikimedia.org/legal.html) |
-| Switchboard | 1% | Dialogue | Godfrey et al. (1992), Stolcke et al., (2000) | [link](http://compprag.christopherpotts.net/swda.html) | [link](http://compprag.christopherpotts.net/swda.html) |
-
-**Data preprocessing**
-
+Training data
+------------
 
 
 Implementation details
