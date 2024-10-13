@@ -35,7 +35,7 @@ class WMLTrainer:
             serializable_config = OmegaConf.to_container(self.args, resolve=True, throw_on_missing=True)
             wandb.init(project=self.args.general.wandb_project, name=self.args.general.wandb_run_name+str(self.datetime), config=serializable_config)
         self.device = args.WML.device
-        if (self.args.WML.distillation_method == "vanilla") | (self.args.WML.use_opt_config is None):
+        if (self.args.WML.distillation_method == "vanilla") | (not self.args.WML.use_opt_config):
             self.base_model = self.load_base_model()
         self.peer_models, self.best_configs = self.create_peer_models()
         self.optimizers = self.create_optimizer(args.WML.step_size)
@@ -86,7 +86,7 @@ class WMLTrainer:
         else:
             logger.info("Using presearched configs for student models")
             best_configs = []
-            config_path = f"{base_path}/models/{self.args.general.exp_name}/arch_search_results" 
+            config_path = f"{base_path}/models/{self.args.general.exp_name}/num_peer_{self.args.WML.num_peers}/arch_search_results" 
             file_list = glob.glob(config_path + "/*.json")
             for file_path in file_list:
                 # Read the JSON file
@@ -331,14 +331,15 @@ class WMLTrainer:
                         'config': self.args,
                         'best_configs':self.best_configs
                     }
-            os.makedirs(base_path + '/models/' + self.args.general.exp_name,exist_ok=True)
-            torch.save(checkpoint, os.path.join(base_path + '/models/' + self.args.general.exp_name, self.args.general.wandb_run_name + f'peer_{i+1}_ckpt.pt'))
+            save_path = f"{base_path}/models/{self.args.general.exp_name}/num_peer_{self.args.WML.num_peers}"
+            os.makedirs(save_path,exist_ok=True)
+            torch.save(checkpoint, os.path.join(save_path, self.args.general.wandb_run_name + f'peer_{i+1}_ckpt.pt'))
             logger.info(f"saved peer_model_{i+1}.pt checkpoint to local drive")
             
             # Create a W&B artifact for the checkpoint
             if self.args.general.wandb_log:
                 artifact = wandb.Artifact('peer-model-checkpoints', type='model')
-                artifact.add_file(os.path.join(base_path + '/models/' + self.args.general.exp_name, self.args.general.wandb_run_name + f'peer_{i+1}_ckpt.pt'))
+                artifact.add_file(os.path.join(save_path, self.args.general.wandb_run_name + f'peer_{i+1}_ckpt.pt'))
                 wandb.log_artifact(artifact)
         
         wandb.finish()

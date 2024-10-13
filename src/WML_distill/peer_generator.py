@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import numpy as np
 logger = logging.getLogger(__name__)
-
 base_path = str(Path(__file__).resolve().parent.parent.parent)
 sys.path.append(base_path)
 
@@ -22,42 +22,19 @@ def architecture_search(base_model_params, num_peers, args, output_path, n_iter=
         return sum(torch.sum(p != 0).item() for p in model.parameters() if p.requires_grad)
 
     hyperparameters = {
-        'num_layers': [8, 12, 16, 20, 24, 28],
-        'num_heads': [8, 16, 24, 32],
-        'emb_dim': [512, 768, 1536, 2048]
+        'num_layers': [6, 8, 12, 16, 20],
+        'num_heads': [8, 16, 32],
+        'emb_dim': [256, 512, 768, 1024, 2048]
     }
-
-    def is_valid_architecture(num_layers, num_heads, hidden_size):
-        # Constraint 1: hidden_size should be divisible by num_attention_heads
-        if hidden_size % num_heads != 0:
-            return False
-        
-
-        # Constraint 2: hidden_size / num_attention_heads should be between 64 and 128
-        if not (64 <= hidden_size / num_heads <= 128):
-            return False
-        
-        # Constraint 3: For deeper models, ensure larger hidden sizes
-        if num_layers > 16 and hidden_size < 512:
-            return False
-        
-        # Constraint 4: For very large hidden sizes, ensure enough layers
-        if hidden_size > 1024 and num_layers < 8:
-            return False
-
-        # Constraint 5: Limit very wide and shallow models
-        if hidden_size > 1024 and num_layers < 8:  # Updated this constraint
-            return False
-
-        return True
 
     def objective(num_layers_idx, num_heads_idx, emb_dim_idx, target_params):
         num_layers = hyperparameters['num_layers'][int(num_layers_idx)]
         num_heads = hyperparameters['num_heads'][int(num_heads_idx)]
         emb_dim = hyperparameters['emb_dim'][int(emb_dim_idx)]
         
-        #if not is_valid_architecture(num_layers, num_heads, emb_dim):
-        #    return -1e6
+        # Check if the constraint is satisfied
+        if emb_dim % num_heads != 0:
+            return -1e6  # Return a very low score for invalid configurations
         
         config = AutoConfig.from_pretrained(args.WML.hf_model_name, 
                                             num_hidden_layers=num_layers,
@@ -78,7 +55,7 @@ def architecture_search(base_model_params, num_peers, args, output_path, n_iter=
         }
         
         optimizer = BayesianOptimization(
-            f=lambda num_layers_idx, num_heads_idx, emb_dim_idx: objective(num_layers_idx, num_heads_idx, emb_dim_idx, target_params),
+            f=lambda **kwargs: objective(**kwargs, target_params=target_params),
             pbounds=pbounds,
             random_state=i
         )
@@ -98,15 +75,16 @@ def architecture_search(base_model_params, num_peers, args, output_path, n_iter=
         
         actual_params = count_params(config)
         logger.info(f"Peer {i+1}: Layers={num_layers}, Heads={num_heads}, Emb_dim={emb_dim}, "
-                    f"Params={actual_params:,} (Target: {target_params:,.0f})")
+              f"Params={actual_params:,} (Target: {target_params:,.0f})")
         
         try:
             save_path = f"{base_path}/{output_path}/arch_search_results" 
-            os.makedirs(save_path,exist_ok=True)
-            with open(os.path.join(save_path,f"best_configs_peer_{i}.json"), 'w') as f:
-                json.dump(config.to_dict(),f)
+            os.makedirs(save_path, exist_ok=True)
+            with open(os.path.join(save_path, f"best_configs_peer_{i}.json"), 'w') as f:
+                json.dump(config.to_dict(), f)
             logger.info(f"Configs saved to {save_path}")
         except Exception as e:
             logger.warning(f"Configs could not be saved to {save_path} due to {e}. Continuing.")
         peer_configs.append(config)
+    
     return peer_configs

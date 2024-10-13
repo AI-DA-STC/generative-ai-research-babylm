@@ -12,7 +12,7 @@ validate_config:
 
 general:
   exp_name: "RoBERTa_WDML/train_10M_old"
-  wandb_log: False
+  wandb_log: True
   wandb_project: baby_lm_WML_RoBERTa
   wandb_run_name: 'RoBERTa'
 
@@ -32,28 +32,26 @@ WML:
   device: cuda:0
   dtype: float16
   num_peers: 4
-  n_layer: 12
-  n_head: 12
   weight_decay: 0.1
   beta1: 0.9
   beta2: 0.95
-  bayesian_init_points: 1
-  bayesian_n_iter: 1
+  bayesian_init_points: 30
+  bayesian_n_iter: 70
   use_opt_config: True
   grad_clip: 1.0
   layer_bound: 0.9
   batch_size: 3
   block_size: 512
-  num_epochs: 150
+  num_epochs: 50
   loss_alpha: 0.5
   num_batches: 60
   warmup_iters: 5
   step_size: 0.25
   learning_rate: 0.001
   min_lr: 0.0001
-  lr_decay_iters: 150
-  min_step_size: 0.00025
-  enable_early_stopping: True
+  lr_decay_iters: 50
+  min_step_size: 0.0025
+  enable_early_stopping: False
   early_stopping_min_delta: 2.596 #based on mean+3*std of train-val loss experiments
   shuffle: True
   weight_update_frequency: 5

@@ -31,20 +31,20 @@ approaches.
 
 _______
 
-<br>
+## Setup
 
-Training data
-------------
+**Virtual Environment manager** <br>
+This project uses mamba as the package and virtual environment manager. To install mamba, here are some quick steps to doing so:
 
+For macOS/Linux : 
+```bash
+$ curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh" 
 
-Implementation details
-------------
+$ bash Miniforge3-$(uname)-$(uname -m).sh
+```
 
->Insert table summary on training details 
-
-
-Setup
-------------
+For Windows :<br>
+refer [here](https://github.com/conda-forge/miniforge?tab=readme-ov-file#windows)
 
 **Create environment and install dependencies**
 
@@ -62,56 +62,45 @@ $ mamba env create -f dependencies/babylm-conda.yaml
 
 [Click here to download dataset](https://osf.io/ad7qg/) and save the dev, text, train_10M and train_100M to the `data/raw` folder
 
+## Data pre-processing
 
+Assuming you're already on root folder
 
-Project Organization
-------------
+Run preprocessing shell script:
+```
+$ bash ./scripts/preprocess.sh
+```
+This should create and save preprocesed training, test and dev babylm datasets a folder under data called ```preprocessed```. 
 
-    ├── LICENSE
-    ├── Makefile           <- Makefile with commands like `make data` or `make train`
-    ├── README.md          <- The top-level README for developers using this project.
-    ├── data
-    │   ├── external       <- Data from third party sources.
-    │   ├── interim        <- Intermediate data that has been transformed.
-    │   ├── processed      <- The final, canonical data sets for modeling.
-    │   └── raw            <- The original, immutable data dump.
-    │
-    ├── docs               <- A default Sphinx project; see sphinx-doc.org for details
-    │
-    ├── models             <- Trained and serialized models, model predictions, or model summaries
-    │
-    ├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-    │                         the creator's initials, and a short `-` delimited description, e.g.
-    │                         `1.0-jqp-initial-data-exploration`.
-    │
-    ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-    │
-    ├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-    │   └── figures        <- Generated graphics and figures to be used in reporting
-    │
-    ├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-    │                         generated with `pip freeze > requirements.txt`
-    │
-    ├── setup.py           <- makes project pip installable (pip install -e .) so src can be imported
-    ├── src                <- Source code for use in this project.
-    │   ├── __init__.py    <- Makes src a Python module
-    │   │
-    │   ├── data           <- Scripts to download or generate data
-    │   │   └── make_dataset.py
-    │   │
-    │   ├── features       <- Scripts to turn raw data into features for modeling
-    │   │   └── build_features.py
-    │   │
-    │   ├── models         <- Scripts to train models and then use trained models to make
-    │   │   │                 predictions
-    │   │   ├── predict_model.py
-    │   │   └── train_model.py
-    │   │
-    │   └── visualization  <- Scripts to create exploratory and results oriented visualizations
-    │       └── visualize.py
-    │
-    └── tox.ini            <- tox file with settings for running tox; see tox.readthedocs.io
+## Configure
 
+Configure the following config parameters in conf/config.yaml : 
 
---------
+| Config Param | Values | Description |
+|--------------|--------|-------------|
+| general.exp_name | Any | Name of the experiment where trained tokenizers, model configs, trained model checkpoints will be saved |
+| general.wandb_log | True/False | Flag to enable/disable wandb logging |
+| general.wandb_project | Any | Name of wandb project where the training metrics will be logged |
+| general.wandb_run_name | Any | Name of wandb run within the project. Datetime will be appended to this to ensure uniqueness |
+| preprocess.tokenizer_type | from_scratch/pretrained/pretrained_hf | Whether to train a tokenizer from scratch or use pretrained one |
+| preprocess.train_data_path | Any | Path to preprocessed training data with .train extension |
+| preprocess.dev_data_path | Any | Path to preprocessed dev data with .dev extension |
+| WML.distillation_method | mutual/vanilla | Select either mutual (without teacher) or vanilla (with teacher supervision) distillation |
+| WML.hf_model_name | Any | Name of huggingface model used as teacher model when distillation_method = vanilla | 
+| WML.use_opt_config | True/False | This enable/disables architecture search to find peer models. If you have already configs saved in models/exp_name/dataset_name/arch_search_results, then you can set to False |
+| WML.model_type | MLM/CLM | MLM (Masked language models eg. RoBERTa) or CLM (Causal language models eg. GPT2) |
+| WML.num_peers | 1/2/4 | Works best for num_peer = 4 | 
 
+**Train custom tokenizer**
+```
+$ python scripts/run_tokenizer.py
+```
+
+**Run Weighted deep mutual learning (WDML) training script for num_peers = 4**
+```
+$ python scripts/train_WML.py
+```
+
+## Please cite the following publication 
+
+```coming soon```
