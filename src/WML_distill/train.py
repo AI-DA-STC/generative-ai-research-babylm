@@ -186,15 +186,25 @@ class WMLTrainer:
                         logger.info(F"Early stopping condition met : {abs(tloss-vloss)} > {self.args.WML.early_stopping_min_delta} Stop training now.")
                         break
                 if self.args.general.wandb_log:
-                    wandb.log({
-                        "iter": epoch,
-                        "train/loss": tloss,
-                        "val/loss": vloss,
-                        "WML_ensemble_loss": ensemble_loss,
-                        "lr": round(self.learning_rate,4),
-                        "WML_weights_lr": round(self.WML_step_size,4),
-                        "peer weights":self.peer_models
-                    })
+                    if self.args.WML.use_bilevel:
+                        wandb.log({
+                            "iter": epoch,
+                            "train/loss": tloss,
+                            "val/loss": vloss,
+                            "WML_ensemble_loss": ensemble_loss,
+                            "lr": round(self.learning_rate,4),
+                            "WML_weights_lr": round(self.WML_step_size,4),
+                            "peer weights":self.peer_models
+                        })
+                    else:
+                        wandb.log({
+                            "iter": epoch,
+                            "train/loss": tloss,
+                            "val/loss": vloss,
+                            "WML_ensemble_loss": ensemble_loss,
+                            "lr": round(self.learning_rate,4),
+                            "peer weights":self.peer_models
+                        })
                 
         self.save_models()
 
@@ -269,54 +279,55 @@ class WMLTrainer:
                 total_loss = total_loss / self.args.WML.num_batches
                 ensemble_loss = ensemble_loss / self.args.WML.num_batches
             
-            with torch.enable_grad():
-                
-                # Step 3b: Calculate ∇ωL2 using Theorem 1 from https://proceedings.neurips.cc/paper_files/paper/2022/file/4b25c000967af9036fb9b207b198a626-Paper-Conference.pdf
-
-                grad_L2_theta = []  # Will store dL2/dθ for each peer
-                grad_La_theta = []  # Will store dLa/dθ for each peer
-
-                for i, model in enumerate(self.peer_models):
-                    # Calculate dL2/dωi
-                    grad_L2_w = torch.autograd.grad(ensemble_loss, self.peer_weights, retain_graph=True, allow_unused=True)[0].to(self.device)
+            if self.args.WML.use_bilevel:
+                with torch.enable_grad():
                     
-                    # Calculate dL2/dθ
-                    grad_L2_theta.append([g if g is not None else torch.zeros_like(p).to(self.device) for g, p in zip(
-                        torch.autograd.grad(ensemble_loss, model.parameters(), retain_graph=True, allow_unused=True),
-                        model.parameters()
-                        )])
+                    # Step 3b: Calculate ∇ωL2 using Theorem 1 from https://proceedings.neurips.cc/paper_files/paper/2022/file/4b25c000967af9036fb9b207b198a626-Paper-Conference.pdf
 
-                    # Calculate La = (1-α)LCE(zi, Y) + α ∑(KL(zj, zi))
-                    La = peer_losses[i]
-                    La = La.detach().requires_grad_(True)
+                    grad_L2_theta = []  # Will store dL2/dθ for each peer
+                    grad_La_theta = []  # Will store dLa/dθ for each peer
 
-                    # Calculate dLa/dθ
-                    grad_La_theta.append([g if g is not None else torch.zeros_like(p).to(self.device) for g, p in zip(
-                        torch.autograd.grad(La, model.parameters(),retain_graph=True, allow_unused=True),
-                        model.parameters()
-                        )])
-                # Calculate the final gradient: ∇ωiL2 = dL2/dωi - γ*(dL2/dθ)*(dLa/dθ)T
-                grad_w = []
-                for i in range(len(self.peer_models)):
-                    grad = grad_L2_w[i]
-                    for param_L2, param_La in zip(grad_L2_theta[i], grad_La_theta[i]):
-                        grad += self.learning_rate * torch.sum(param_L2 * param_La)
-                    grad_w.append(grad)
-                
-        # Gradient clipping
-        self.peer_weights_grad.append(grad_w)
-        if self.args.WML.grad_clip != 0:
-            grad_w_clipped = [torch.clamp(g, 0, self.args.WML.grad_clip) for g in grad_w]
-        else:
-            grad_w_clipped = grad_w
+                    for i, model in enumerate(self.peer_models):
+                        # Calculate dL2/dωi
+                        grad_L2_w = torch.autograd.grad(ensemble_loss, self.peer_weights, retain_graph=True, allow_unused=True)[0].to(self.device)
+                        
+                        # Calculate dL2/dθ
+                        grad_L2_theta.append([g if g is not None else torch.zeros_like(p).to(self.device) for g, p in zip(
+                            torch.autograd.grad(ensemble_loss, model.parameters(), retain_graph=True, allow_unused=True),
+                            model.parameters()
+                            )])
 
-        # Learning rate schedule for weight updates
-        self.WML_step_size = get_lr(epoch,self.args,lr_type="val")
+                        # Calculate La = (1-α)LCE(zi, Y) + α ∑(KL(zj, zi))
+                        La = peer_losses[i]
+                        La = La.detach().requires_grad_(True)
 
-        # Step 3c: Update ω using mirror descent
-        exp_grad = [torch.exp(-self.WML_step_size * g) for g in grad_w_clipped]
-        sum_exp_grad = sum(w * eg for w, eg in zip(self.peer_weights, exp_grad))
-        self.peer_weights = nn.Parameter(torch.tensor([w * eg / sum_exp_grad for w, eg in zip(self.peer_weights, exp_grad)]))
+                        # Calculate dLa/dθ
+                        grad_La_theta.append([g if g is not None else torch.zeros_like(p).to(self.device) for g, p in zip(
+                            torch.autograd.grad(La, model.parameters(),retain_graph=True, allow_unused=True),
+                            model.parameters()
+                            )])
+                    # Calculate the final gradient: ∇ωiL2 = dL2/dωi - γ*(dL2/dθ)*(dLa/dθ)T
+                    grad_w = []
+                    for i in range(len(self.peer_models)):
+                        grad = grad_L2_w[i]
+                        for param_L2, param_La in zip(grad_L2_theta[i], grad_La_theta[i]):
+                            grad += self.learning_rate * torch.sum(param_L2 * param_La)
+                        grad_w.append(grad)
+                    
+                # Gradient clipping
+                self.peer_weights_grad.append(grad_w)
+                if self.args.WML.grad_clip != 0:
+                    grad_w_clipped = [torch.clamp(g, 0, self.args.WML.grad_clip) for g in grad_w]
+                else:
+                    grad_w_clipped = grad_w
+
+                # Learning rate schedule for weight updates
+                self.WML_step_size = get_lr(epoch,self.args,lr_type="val")
+
+                # Step 3c: Update ω using mirror descent
+                exp_grad = [torch.exp(-self.WML_step_size * g) for g in grad_w_clipped]
+                sum_exp_grad = sum(w * eg for w, eg in zip(self.peer_weights, exp_grad))
+                self.peer_weights = nn.Parameter(torch.tensor([w * eg / sum_exp_grad for w, eg in zip(self.peer_weights, exp_grad)]))
 
         return total_loss, ensemble_loss
 

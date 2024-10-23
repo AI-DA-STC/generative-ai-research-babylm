@@ -171,3 +171,7 @@ stauth/**
 !stauth/create_creds.py
 
 ####################
+
+models/
+
+results/

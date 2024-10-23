@@ -22,9 +22,9 @@ def architecture_search(base_model_params, num_peers, args, output_path, n_iter=
         return sum(torch.sum(p != 0).item() for p in model.parameters() if p.requires_grad)
 
     hyperparameters = {
-        'num_layers': [6, 8, 12, 16, 20],
-        'num_heads': [8, 16, 32],
-        'emb_dim': [256, 512, 768, 1024, 2048]
+        'num_layers': args.WML.search_num_layers,
+        'num_heads': args.WML.search_num_heads,
+        'emb_dim': args.WML.search_emb_dim
     }
 
     def objective(num_layers_idx, num_heads_idx, emb_dim_idx, target_params):

@@ -1,37 +1,35 @@
 hydra:
   job:
     chdir: True
-
 logger:
   use_log_filename_prefix: false
   log_filename_prefix: "/var/log/babylm"
   excluded_handlers: []
-
 validate_config:
   strict: False
-
 general:
   exp_name: "RoBERTa_WDML/train_10M_old"
   wandb_log: True
   wandb_project: baby_lm_WML_RoBERTa
-  wandb_run_name: 'RoBERTa'
-
+  wandb_run_name: 'RoBERTa_WDML_10M'
 preprocess:
   train_data_path: "data/processed/train_10M_old/combined_10M.train"
   dev_data_path: "data/processed/dev_old/combined.dev"
   test_data_path: "data/processed/test/combined.test"
   tokenizer_type: from_scratch #from_scratch or pretrained or pretrained_hf
   tokenized_train_data_path: data/processed/train_10M_old/processed_encoded_train.bin
-  tokenized_dev_data_path : "data/processed/dev_old/processed_encoded_val.bin"
+  tokenized_dev_data_path: "data/processed/dev_old/processed_encoded_val.bin"
   vocab_size: 50265
   mask_token_id: 4
-
 WML:
   model_type: MLM
   hf_model_name: "roberta-base"
   device: cuda:0
   dtype: float16
-  num_peers: 4
+  num_peers: 1
+  search_num_layers: [6, 8, 12, 16, 20]
+  search_num_heads: [8, 16, 32]
+  search_emb_dim: [256, 512, 768, 1024, 2048]
   weight_decay: 0.1
   beta1: 0.9
   beta2: 0.95
@@ -56,9 +54,9 @@ WML:
   shuffle: True
   weight_update_frequency: 5
   distillation_method: "mutual"
-
+  use_bilevel: True #if enabled the peer weights will be set to 1/num_peers and not trained dynamically
 eval:
   tokenizer_type: "pretrained" #or pretrained_hf
   model_location: "local" #or hf
-  model_name_or_path: "models/RoBERTa_WML/train_10M/n_peer_4_v3/RoBERTa_WML_n_peer_4_v3peer_1_ckpt.pt"
-  model_config_path: "models/RoBERTa_WML/configs/base.json"
+  model_name_or_path: "models/RoBERTa_WDML/train_10M_old/num_peer_4/RoBERTa_WML_n_peer_4_v3peer_4_ckpt.pt"
+  model_config_path: "models/RoBERTa_WDML/train_10M_old/num_peer_4/arch_search_results/best_configs_peer_3.json"
