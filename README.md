@@ -14,7 +14,7 @@
 <br>
 
 <p align="center">
-  <a href=""><b>Paper</b></a><br>
+  <a href="https://drive.google.com/file/d/1RD2IQJ-0Y0NmtC-wzxn_CW1jpM9rQjdp/view?usp=sharing"><b>Paper</b></a><br>
   <a href="https://huggingface.co/AI-DA-STC"><b>HuggingFace models</b></a>
 </p>
 
